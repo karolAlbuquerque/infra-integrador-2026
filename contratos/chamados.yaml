@@ -473,6 +473,160 @@ paths:
         '404': { $ref: '#/components/responses/NaoEncontrado' }
         '409': { $ref: '#/components/responses/EstadoInvalido' }
 
+  /api/chamados/chamados/{id}/interacoes:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    get:
+      tags: [interacoes]
+      operationId: listarInteracoes
+      summary: Listar interações do chamado
+      description: |
+        Exige `chamados.chamado.ver`. Quem não é da equipe recebe apenas as interações de visibilidade
+        `publica`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de interações
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Interacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    post:
+      tags: [interacoes]
+      operationId: criarInteracao
+      summary: Registrar nota interna ou resposta ao solicitante
+      description: |
+        Exige `chamados.chamado.editar`. A primeira interação `publica` de um técnico preenche
+        `primeiraRespostaEm` do chamado. Nota interna não conta.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaInteracao' }
+      responses:
+        '201':
+          description: Interação registrada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Interacao' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/chamados/{id}/apontamentos:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    get:
+      tags: [apontamentos]
+      operationId: listarApontamentos
+      summary: Listar horas apontadas no chamado
+      description: Exige `chamados.chamado.ver`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de apontamentos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Apontamento' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    post:
+      tags: [apontamentos]
+      operationId: criarApontamento
+      summary: Apontar horas trabalhadas
+      description: |
+        Exige `chamados.chamado.editar`. É a fonte de "horas por cliente" e "chamados por técnico" — um
+        campo único editável no chamado não seria auditável.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovoApontamento' }
+      responses:
+        '201':
+          description: Apontamento registrado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Apontamento' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/chamados/{id}/transicoes:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    get:
+      tags: [ciclo-de-vida]
+      operationId: listarTransicoes
+      summary: Histórico de mudanças de estado
+      description: |
+        Exige `chamados.chamado.ver`. É a fonte de verdade do tempo em cada etapa e do desconto das pausas
+        no SLA.
+      responses:
+        '200':
+          description: Histórico em ordem cronológica
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Transicao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
   /api/chamados/health:
     get:
       tags: [saude]
@@ -756,3 +910,77 @@ components:
           minLength: 3
           maxLength: 8000
           example: Serviço de arquivos reiniciado e permissões corrigidas.
+
+    Interacao:
+      type: object
+      required: [id, visibilidade, autorUsuarioId, texto, criadoEm]
+      properties:
+        id: { type: string, format: uuid, example: 3f8e1c2b-9a7d-4e6f-8b5a-2c1d0e9f8a7b }
+        visibilidade:
+          type: string
+          enum: [interna, publica]
+          description: |
+            `interna` — só a equipe vê. `publica` — o solicitante vê, e é a que marca a primeira resposta
+            do SLA.
+          example: publica
+        autorUsuarioId: { type: string, format: uuid }
+        texto:
+          type: string
+          example: Reiniciamos o serviço e pedimos que o cliente teste novamente.
+        documentoIds: { type: array, items: { type: string, format: uuid } }
+        criadoEm: { type: string, format: date-time, example: '2026-09-17T13:40:00Z' }
+
+    NovaInteracao:
+      type: object
+      required: [visibilidade, texto]
+      properties:
+        visibilidade: { type: string, enum: [interna, publica], example: publica }
+        texto:
+          type: string
+          minLength: 1
+          maxLength: 8000
+          example: Reiniciamos o serviço e pedimos que o cliente teste novamente.
+        documentoIds: { type: array, items: { type: string, format: uuid } }
+
+    Apontamento:
+      type: object
+      required: [id, usuarioId, minutos, data, criadoEm]
+      properties:
+        id: { type: string, format: uuid, example: 8b5a2c1d-0e9f-4a7b-9c3d-1e2f3a4b5c6d }
+        usuarioId: { type: string, format: uuid }
+        minutos: { type: integer, minimum: 1, example: 45 }
+        descricao:
+          type: [string, 'null']
+          maxLength: 500
+          example: Diagnóstico remoto e correção de permissões.
+        data: { type: string, format: date, example: '2026-09-17' }
+        criadoEm: { type: string, format: date-time, example: '2026-09-17T13:45:00Z' }
+
+    NovoApontamento:
+      type: object
+      required: [minutos, data]
+      properties:
+        minutos: { type: integer, minimum: 1, maximum: 1440, example: 45 }
+        descricao:
+          type: [string, 'null']
+          maxLength: 500
+          example: Diagnóstico remoto e correção de permissões.
+        data: { type: string, format: date, example: '2026-09-17' }
+
+    Transicao:
+      type: object
+      required: [id, paraStatus, usuarioId, ocorridoEm]
+      properties:
+        id: { type: string, format: uuid, example: 1e2f3a4b-5c6d-4e7f-8a9b-0c1d2e3f4a5b }
+        deStatus:
+          type: [string, 'null']
+          enum: [novo, em_atendimento, aguardando_cliente, aguardando_fornecedor, escalado, resolvido, fechado, reaberto, null]
+          description: Nulo na abertura do chamado.
+          example: novo
+        paraStatus:
+          type: string
+          enum: [novo, em_atendimento, aguardando_cliente, aguardando_fornecedor, escalado, resolvido, fechado, reaberto]
+          example: em_atendimento
+        usuarioId: { type: string, format: uuid }
+        motivo: { type: [string, 'null'], maxLength: 500 }
+        ocorridoEm: { type: string, format: date-time, example: '2026-09-17T13:20:00Z' }
