@@ -1,0 +1,143 @@
+openapi: 3.1.0
+info:
+  title: Chamados e Relatórios — Grupo 3
+  version: 0.1.0
+  summary: Help desk com SLA e motor de relatórios da plataforma.
+  description: |
+    Endpoints do módulo `chamados`. Abertura e ciclo de vida de chamados técnicos (internos e de cliente),
+    controle de SLA com pausa, interações, apontamentos de horas e os relatórios técnicos.
+    Publicado antes da implementação, conforme §14.1 do Contrato de Integração.
+  license:
+    name: Uso acadêmico — Projeto Integrador 2026
+    identifier: LicenseRef-Academico
+servers:
+  - url: http://localhost:8080
+    description: Pelo gateway
+  - url: http://chamados:8086
+    description: Direto, entre serviços
+tags:
+  - name: chamados
+    description: Abertura, consulta e edição de chamados
+  - name: ciclo-de-vida
+    description: Transições de estado do chamado
+  - name: interacoes
+    description: Notas internas e respostas ao solicitante
+  - name: apontamentos
+    description: Horas trabalhadas no chamado
+  - name: cadastros
+    description: Categorias, políticas de SLA e vínculo com contrato
+  - name: integracao
+    description: Endpoints consumidos por outros módulos
+  - name: relatorios
+    description: Relatórios técnicos
+  - name: saude
+    description: Estado do serviço
+
+security:
+  - bearerJwt: []
+
+paths:
+  /api/chamados/health:
+    get:
+      tags: [saude]
+      operationId: saude
+      summary: Serviço de pé e conectado ao banco
+      description: Não exige token. Usado pela casca para avisar que o módulo está indisponível.
+      security: []
+      responses:
+        '200':
+          description: Disponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+              example: { success: true, data: { status: UP }, message: null, errors: [] }
+        '503':
+          description: Banco indisponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+
+components:
+  securitySchemes:
+    bearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      description: Página, começando em zero
+      schema: { type: integer, minimum: 0, default: 0 }
+    Tamanho:
+      name: tamanho
+      in: query
+      description: Itens por página, no máximo 100
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  responses:
+    DadosInvalidos:
+      description: Dado inválido
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: Não foi possível salvar o chamado.
+            errors:
+              - { campo: assunto, codigo: CAMPO_INVALIDO, detalhe: Informe o assunto. }
+    NaoAutenticado:
+      description: Sem token, token inválido ou expirado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    SemPermissao:
+      description: Sem a permissão exigida
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    NaoEncontrado:
+      description: Não existe ou pertence a outro tenant
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    EstadoInvalido:
+      description: A transição não é válida para o estado atual do chamado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: Não é possível fechar um chamado que ainda não foi resolvido.
+            errors:
+              - { campo: status, codigo: TRANSICAO_INVALIDA, detalhe: 'De novo só se vai para em_atendimento ou escalado.' }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [success, data, message, errors]
+      properties:
+        success: { type: boolean }
+        data: {}
+        message: { type: [string, 'null'] }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [campo, codigo, detalhe]
+            properties:
+              campo: { type: string }
+              codigo: { type: string }
+              detalhe: { type: string }
+
+    Pagina:
+      type: object
+      required: [itens, pagina, tamanho, total]
+      properties:
+        itens: { type: array, items: {} }
+        pagina: { type: integer, example: 0 }
+        tamanho: { type: integer, example: 20 }
+        total: { type: integer, example: 137 }
