@@ -141,3 +141,142 @@ components:
         pagina: { type: integer, example: 0 }
         tamanho: { type: integer, example: 20 }
         total: { type: integer, example: 137 }
+
+    Chamado:
+      type: object
+      required: [id, numero, tipo, prioridade, status, assunto, criadoEm]
+      properties:
+        id: { type: string, format: uuid, example: 5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+        numero: { type: integer, description: 'Sequencial por tenant, exibido ao usuário', example: 1042 }
+        tipo:
+          type: string
+          enum: [interno, cliente]
+          description: |
+            `interno` — solicitante é usuário do sistema, sem empresa.
+            `cliente` — solicitante é contato do CRM, com empresa obrigatória.
+          example: cliente
+        solicitanteUsuarioId:
+          type: [string, 'null']
+          format: uuid
+          description: Referência a `identity.usuarios`. Preenchido apenas quando `tipo` é `interno`.
+        empresaId:
+          type: [string, 'null']
+          format: uuid
+          description: Referência a `crm.empresas`. Obrigatório quando `tipo` é `cliente`.
+        empresaNome:
+          type: [string, 'null']
+          description: Razão social copiada na abertura do chamado, conforme §9.5 do Contrato.
+          example: Centinela Soluções LTDA
+        solicitanteContatoId:
+          type: [string, 'null']
+          format: uuid
+          description: Referência a `crm.contatos`.
+        categoriaId: { type: string, format: uuid }
+        prioridade:
+          type: string
+          enum: [baixa, media, alta, critica]
+          example: alta
+        servicoId:
+          type: [string, 'null']
+          format: uuid
+          description: Serviço contratado ao qual o chamado se refere. Módulo dono ainda não definido.
+        contratoId:
+          type: [string, 'null']
+          format: uuid
+          description: Referência a `contratos.contratos`.
+        tecnicoId:
+          type: [string, 'null']
+          format: uuid
+          description: Técnico responsável. Nulo enquanto o chamado está em `novo`.
+        status:
+          type: string
+          enum: [novo, em_atendimento, aguardando_cliente, aguardando_fornecedor, escalado, resolvido, fechado, reaberto]
+          example: em_atendimento
+        assunto: { type: string, maxLength: 200, example: Servidor de arquivos inacessível }
+        descricao: { type: [string, 'null'], maxLength: 8000 }
+        solucao:
+          type: [string, 'null']
+          maxLength: 8000
+          description: Obrigatório ao resolver o chamado.
+        documentoIds:
+          type: array
+          description: Anexos, referenciados por UUID no serviço de documentos.
+          items: { type: string, format: uuid }
+        politicaSlaId: { type: [string, 'null'], format: uuid }
+        prazoPrimeiraRespostaMinutos:
+          type: [integer, 'null']
+          description: Congelado na abertura. Não muda se a política mudar depois.
+          example: 60
+        prazoResolucaoMinutos: { type: [integer, 'null'], example: 480 }
+        vencePrimeiraRespostaEm:
+          type: [string, 'null']
+          format: date-time
+          description: Empurrado a cada retomada, pelo tempo que o chamado ficou pausado.
+        venceResolucaoEm: { type: [string, 'null'], format: date-time }
+        primeiraRespostaEm:
+          type: [string, 'null']
+          format: date-time
+          description: Primeira interação pública de um técnico. Nota interna não conta.
+        resolvidoEm: { type: [string, 'null'], format: date-time }
+        fechadoEm: { type: [string, 'null'], format: date-time }
+        tempoPausadoMinutos: { type: integer, default: 0, example: 0 }
+        tempoTrabalhadoMinutos:
+          type: integer
+          description: Soma dos apontamentos do chamado.
+          default: 0
+          example: 45
+        reaberturas: { type: integer, default: 0, example: 0 }
+        criadoEm: { type: string, format: date-time, example: '2026-09-17T13:02:11Z' }
+        atualizadoEm: { type: [string, 'null'], format: date-time }
+
+    ChamadoResumo:
+      type: object
+      required: [id, numero, assunto, status, prioridade, criadoEm]
+      properties:
+        id: { type: string, format: uuid, example: 5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+        numero: { type: integer, example: 1042 }
+        assunto: { type: string, example: Servidor de arquivos inacessível }
+        status:
+          type: string
+          enum: [novo, em_atendimento, aguardando_cliente, aguardando_fornecedor, escalado, resolvido, fechado, reaberto]
+          example: em_atendimento
+        prioridade: { type: string, enum: [baixa, media, alta, critica], example: alta }
+        tecnicoId: { type: [string, 'null'], format: uuid }
+        venceResolucaoEm: { type: [string, 'null'], format: date-time }
+        criadoEm: { type: string, format: date-time, example: '2026-09-17T13:02:11Z' }
+
+    NovoChamado:
+      type: object
+      required: [tipo, categoriaId, prioridade, assunto]
+      description: |
+        `tipo` decide quais campos são obrigatórios: `interno` exige `solicitanteUsuarioId` e recusa
+        `empresaId`; `cliente` exige `empresaId`. Incoerência responde 400.
+      properties:
+        tipo: { type: string, enum: [interno, cliente], example: cliente }
+        solicitanteUsuarioId: { type: [string, 'null'], format: uuid }
+        empresaId: { type: [string, 'null'], format: uuid }
+        solicitanteContatoId: { type: [string, 'null'], format: uuid }
+        categoriaId: { type: string, format: uuid }
+        prioridade: { type: string, enum: [baixa, media, alta, critica], example: alta }
+        servicoId: { type: [string, 'null'], format: uuid }
+        contratoId: { type: [string, 'null'], format: uuid }
+        assunto: { type: string, minLength: 1, maxLength: 200, example: Servidor de arquivos inacessível }
+        descricao:
+          type: [string, 'null']
+          maxLength: 8000
+          example: Desde as 9h ninguém acessa a pasta compartilhada.
+        documentoIds: { type: array, items: { type: string, format: uuid } }
+
+    AtualizarChamado:
+      type: object
+      description: |
+        Não altera `status`. Mudança de estado acontece apenas pelas rotas de transição — se este corpo
+        aceitasse o campo, as regras de transição deixariam de valer.
+      properties:
+        categoriaId: { type: string, format: uuid }
+        prioridade: { type: string, enum: [baixa, media, alta, critica], example: alta }
+        servicoId: { type: [string, 'null'], format: uuid }
+        contratoId: { type: [string, 'null'], format: uuid }
+        assunto: { type: string, minLength: 1, maxLength: 200, example: Servidor de arquivos inacessível }
+        descricao: { type: [string, 'null'], maxLength: 8000 }
+        documentoIds: { type: array, items: { type: string, format: uuid } }
