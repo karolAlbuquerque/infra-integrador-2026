@@ -915,6 +915,100 @@ paths:
         '403': { $ref: '#/components/responses/SemPermissao' }
         '404': { $ref: '#/components/responses/NaoEncontrado' }
 
+  /api/chamados/empresas/{id}/status-tecnico:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador da empresa no CRM
+        schema: { type: string, format: uuid }
+    get:
+      tags: [integracao]
+      operationId: verStatusTecnico
+      summary: Status técnico de uma empresa
+      description: |
+        Exige `chamados.empresa.ver_resumo`, permissão fraca concedida a todo perfil operacional. Sem ela,
+        a ficha de empresa do CRM quebraria com 403 — é o caso descrito no §9.3 do Contrato.
+        Quem chama deve aplicar timeout de 3 segundos e degradar a tela em caso de falha (§9.6).
+      responses:
+        '200':
+          description: Status técnico
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/StatusTecnico' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/empresas/status-tecnico:
+    get:
+      tags: [integracao]
+      operationId: verStatusTecnicoEmLote
+      summary: Status técnico de várias empresas
+      description: |
+        Exige `chamados.empresa.ver_resumo`. Existe porque uma listagem de empresas no CRM faria uma
+        chamada por linha sem ela (§9.4). Empresa sem chamado nenhum não aparece na resposta.
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          description: Identificadores separados por vírgula, no máximo 100
+          schema:
+            type: array
+            maxItems: 100
+            items: { type: string, format: uuid }
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: Lista de status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/StatusTecnico' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/busca:
+    get:
+      tags: [integracao]
+      operationId: buscar
+      summary: Busca global do módulo
+      description: |
+        Exige `chamados.chamado.ver`. Consumido pela casca para a caixa de busca do topo. Devolve no
+        máximo cinco resultados.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Termo buscado, no número ou no assunto do chamado
+          schema: { type: string, minLength: 2, maxLength: 120 }
+      responses:
+        '200':
+          description: Até cinco resultados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        maxItems: 5
+                        items: { $ref: '#/components/schemas/ResultadoBusca' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
   /api/chamados/health:
     get:
       tags: [saude]
@@ -1353,3 +1447,31 @@ components:
       properties:
         contratoId: { type: string, format: uuid }
         politicaId: { type: string, format: uuid }
+
+    StatusTecnico:
+      type: object
+      required: [empresaId, status, chamadosAbertos, foraSla, atualizadoEm]
+      properties:
+        empresaId: { type: string, format: uuid, example: be80e43d-cac3-41ff-895b-7125637878f7 }
+        status:
+          type: string
+          enum: [ok, atencao, critico]
+          description: |
+            Um dos quatro status exibidos na ficha de empresa do CRM, conforme §10.4 do Contrato.
+            Calculado a partir dos chamados críticos em aberto e do cumprimento de SLA.
+          example: atencao
+        chamadosAbertos: { type: integer, example: 3 }
+        foraSla:
+          type: integer
+          description: Chamados em aberto com prazo de resolução vencido.
+          example: 1
+        atualizadoEm: { type: string, format: date-time, example: '2026-09-17T14:00:00Z' }
+
+    ResultadoBusca:
+      type: object
+      required: [id, titulo, subtitulo, rota]
+      properties:
+        id: { type: string, format: uuid, example: 5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+        titulo: { type: string, example: '#1042 — Servidor de arquivos inacessível' }
+        subtitulo: { type: string, example: 'Em atendimento · Centinela Soluções' }
+        rota: { type: string, example: /chamados/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
