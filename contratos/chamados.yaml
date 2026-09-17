@@ -37,6 +37,174 @@ security:
   - bearerJwt: []
 
 paths:
+  /api/chamados/chamados:
+    get:
+      tags: [chamados]
+      operationId: listarChamados
+      summary: Listar chamados do tenant
+      description: Exige `chamados.chamado.ver`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - name: status
+          in: query
+          description: Filtra por um ou mais status
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [novo, em_atendimento, aguardando_cliente, aguardando_fornecedor, escalado, resolvido, fechado, reaberto]
+        - name: prioridade
+          in: query
+          description: Filtra por prioridade
+          schema: { type: string, enum: [baixa, media, alta, critica] }
+        - name: tipo
+          in: query
+          description: Filtra chamados internos ou de cliente
+          schema: { type: string, enum: [interno, cliente] }
+        - name: categoriaId
+          in: query
+          description: Filtra por categoria
+          schema: { type: string, format: uuid }
+        - name: tecnicoId
+          in: query
+          description: Filtra por técnico responsável
+          schema: { type: string, format: uuid }
+        - name: empresaId
+          in: query
+          description: Filtra por empresa do CRM
+          schema: { type: string, format: uuid }
+        - name: de
+          in: query
+          description: Data inicial de abertura
+          schema: { type: string, format: date }
+        - name: ate
+          in: query
+          description: Data final de abertura
+          schema: { type: string, format: date }
+        - name: vencendo
+          in: query
+          description: Apenas chamados em aberto cujo prazo de resolução vence nas próximas 24 horas
+          schema: { type: boolean, default: false }
+        - name: ordenar
+          in: query
+          description: Campo e direção
+          schema:
+            type: string
+            enum: ['criadoEm,desc', 'criadoEm,asc', 'venceResolucaoEm,asc', 'prioridade,desc']
+            default: 'criadoEm,desc'
+      responses:
+        '200':
+          description: Página de chamados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/ChamadoResumo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [chamados]
+      operationId: criarChamado
+      summary: Abrir chamado
+      description: |
+        Exige `chamados.chamado.criar`. O prazo de SLA é calculado e congelado neste momento, a partir da
+        política vinculada ao contrato ou, na ausência dela, da política padrão.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovoChamado' }
+      responses:
+        '201':
+          description: Chamado aberto
+          headers:
+            Location:
+              description: Endereço do chamado criado
+              schema: { type: string, example: /api/chamados/chamados/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/chamados/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    get:
+      tags: [chamados]
+      operationId: verChamado
+      summary: Ver um chamado
+      description: Exige `chamados.chamado.ver`. Chamado de outro tenant responde 404.
+      responses:
+        '200':
+          description: Chamado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [chamados]
+      operationId: editarChamado
+      summary: Editar campos do chamado
+      description: Exige `chamados.chamado.editar`. Não altera status.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AtualizarChamado' }
+      responses:
+        '200':
+          description: Chamado atualizado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    delete:
+      tags: [chamados]
+      operationId: excluirChamado
+      summary: Excluir chamado (soft delete)
+      description: Exige `chamados.chamado.excluir`.
+      responses:
+        '200':
+          description: Chamado excluído
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
   /api/chamados/health:
     get:
       tags: [saude]
