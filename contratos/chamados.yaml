@@ -1009,6 +1009,203 @@ paths:
         '401': { $ref: '#/components/responses/NaoAutenticado' }
         '403': { $ref: '#/components/responses/SemPermissao' }
 
+  /api/chamados/relatorios/chamados:
+    get:
+      tags: [relatorios]
+      operationId: relatorioChamados
+      summary: Chamados por status, categoria e prioridade no período
+      description: Exige `chamados.chamado.ver`.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioEmpresaId'
+        - $ref: '#/components/parameters/RelatorioCategoriaId'
+        - name: agruparPor
+          in: query
+          description: Dimensão do agrupamento
+          schema: { type: string, enum: [status, categoria, prioridade, empresa], default: status }
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/sla:
+    get:
+      tags: [relatorios]
+      operationId: relatorioSla
+      summary: Chamados dentro e fora do SLA
+      description: |
+        Exige `chamados.chamado.ver`. Compara `resolvidoEm` com `venceResolucaoEm`, já descontadas as
+        pausas.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioEmpresaId'
+        - $ref: '#/components/parameters/RelatorioTecnicoId'
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/tempo-resposta:
+    get:
+      tags: [relatorios]
+      operationId: relatorioTempoResposta
+      summary: Tempo médio de primeira resposta
+      description: |
+        Exige `chamados.chamado.ver`. Valor em minutos, contando de `criadoEm` até `primeiraRespostaEm`,
+        descontadas as pausas.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioEmpresaId'
+        - $ref: '#/components/parameters/RelatorioTecnicoId'
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/tempo-solucao:
+    get:
+      tags: [relatorios]
+      operationId: relatorioTempoSolucao
+      summary: Tempo médio de resolução
+      description: |
+        Exige `chamados.chamado.ver`. Valor em minutos, de `criadoEm` até `resolvidoEm`, descontadas as
+        pausas.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioEmpresaId'
+        - $ref: '#/components/parameters/RelatorioTecnicoId'
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/horas-por-cliente:
+    get:
+      tags: [relatorios]
+      operationId: relatorioHorasPorCliente
+      summary: Horas trabalhadas por empresa
+      description: |
+        Exige `chamados.chamado.ver`. Soma dos apontamentos, agrupada por empresa. Valor em minutos.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioEmpresaId'
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/chamados-por-tecnico:
+    get:
+      tags: [relatorios]
+      operationId: relatorioChamadosPorTecnico
+      summary: Volume e desempenho por técnico
+      description: |
+        Exige `chamados.chamado.ver`. `detalhe` traz resolvidos, reabertos e minutos apontados.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioTecnicoId'
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/problemas-recorrentes:
+    get:
+      tags: [relatorios]
+      operationId: relatorioProblemasRecorrentes
+      summary: Categorias com maior reincidência
+      description: |
+        Exige `chamados.chamado.ver`. Agrupa por categoria e empresa, destacando reaberturas — é o que
+        identifica problema tratado como incidente quando deveria ser tratado como causa.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioEmpresaId'
+        - name: minimoOcorrencias
+          in: query
+          description: Ignora agrupamentos com menos ocorrências que este número
+          schema: { type: integer, minimum: 2, default: 3 }
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
   /api/chamados/health:
     get:
       tags: [saude]
@@ -1047,6 +1244,33 @@ components:
       in: query
       description: Itens por página, no máximo 100
       schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    RelatorioDe:
+      name: de
+      in: query
+      required: true
+      description: Início do período, inclusive
+      schema: { type: string, format: date, example: '2026-09-01' }
+    RelatorioAte:
+      name: ate
+      in: query
+      required: true
+      description: Fim do período, inclusive
+      schema: { type: string, format: date, example: '2026-09-30' }
+    RelatorioEmpresaId:
+      name: empresaId
+      in: query
+      description: Restringe a uma empresa do CRM
+      schema: { type: string, format: uuid }
+    RelatorioTecnicoId:
+      name: tecnicoId
+      in: query
+      description: Restringe a um técnico
+      schema: { type: string, format: uuid }
+    RelatorioCategoriaId:
+      name: categoriaId
+      in: query
+      description: Restringe a uma categoria
+      schema: { type: string, format: uuid }
 
   responses:
     DadosInvalidos:
@@ -1475,3 +1699,18 @@ components:
         titulo: { type: string, example: '#1042 — Servidor de arquivos inacessível' }
         subtitulo: { type: string, example: 'Em atendimento · Centinela Soluções' }
         rota: { type: string, example: /chamados/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+
+    LinhaRelatorio:
+      type: object
+      required: [rotulo, valor]
+      description: |
+        Linha de resultado. `rotulo` é a chave do agrupamento — status, técnico, empresa, categoria —
+        e `valor` é a medida do relatório. `detalhe` traz medidas auxiliares quando o relatório tem mais
+        de uma coluna.
+      properties:
+        rotulo: { type: string, example: em_atendimento }
+        valor: { type: number, example: 17 }
+        detalhe:
+          type: [object, 'null']
+          additionalProperties: { type: number }
+          example: { dentroSla: 15, foraSla: 2 }
