@@ -1,0 +1,36 @@
+# Permissões do módulo de chamados e relatórios (Grupo 3).
+# Formato: modulo.recurso.acao, em minúsculas (Contrato §5.1). Ações possíveis:
+# ver, criar, editar, excluir, exportar, aprovar, administrar, compartilhar.
+# As ações `atribuir` e `fechar` são propostas neste PR — justificativa na descrição.
+modulo: chamados
+permissoes:
+  - codigo: chamados.acessar
+    descricao: Ver o módulo de chamados no menu
+    perfisPadrao: [ADMINISTRADOR, GESTOR, TECNICO]
+  - codigo: chamados.chamado.ver
+    descricao: Consultar chamados, interações, apontamentos e relatórios técnicos
+    perfisPadrao: [ADMINISTRADOR, GESTOR, TECNICO]
+  - codigo: chamados.chamado.criar
+    descricao: Abrir e reabrir chamados
+    perfisPadrao: [ADMINISTRADOR, GESTOR, TECNICO]
+  - codigo: chamados.chamado.editar
+    descricao: Editar o chamado, registrar interações e movimentá-lo entre os estados de trabalho
+    perfisPadrao: [ADMINISTRADOR, GESTOR, TECNICO]
+  - codigo: chamados.chamado.atribuir
+    descricao: Designar o técnico responsável por um chamado
+    perfisPadrao: [ADMINISTRADOR, GESTOR]
+  - codigo: chamados.chamado.fechar
+    descricao: Encerrar um chamado resolvido
+    perfisPadrao: [ADMINISTRADOR, GESTOR]
+  - codigo: chamados.chamado.excluir
+    descricao: Excluir chamados
+    perfisPadrao: [ADMINISTRADOR]
+  - codigo: chamados.chamado.exportar
+    descricao: Exportar relatórios técnicos
+    perfisPadrao: [ADMINISTRADOR, GESTOR]
+  - codigo: chamados.empresa.ver_resumo
+    descricao: Ver o status técnico de uma empresa na ficha do CRM
+    perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR, PRE_VENDAS, FINANCEIRO, TECNICO, MARKETING]
+  - codigo: chamados.configuracao.administrar
+    descricao: Administrar categorias, políticas de SLA e vínculos com contrato
+    perfisPadrao: [ADMINISTRADOR]
