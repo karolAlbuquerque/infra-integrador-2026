@@ -627,6 +627,294 @@ paths:
         '403': { $ref: '#/components/responses/SemPermissao' }
         '404': { $ref: '#/components/responses/NaoEncontrado' }
 
+  /api/chamados/categorias:
+    get:
+      tags: [cadastros]
+      operationId: listarCategorias
+      summary: Listar categorias de chamado
+      description: Exige `chamados.chamado.ver`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de categorias
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Categoria' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [cadastros]
+      operationId: criarCategoria
+      summary: Criar categoria
+      description: Exige `chamados.configuracao.administrar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaCategoria' }
+      responses:
+        '201':
+          description: Categoria criada
+          headers:
+            Location:
+              description: Endereço da categoria criada
+              schema: { type: string, example: /api/chamados/categorias/7a1b2c3d-4e5f-4a7b-8c9d-0e1f2a3b4c5d }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Categoria' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/categorias/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador da categoria
+        schema: { type: string, format: uuid }
+    put:
+      tags: [cadastros]
+      operationId: editarCategoria
+      summary: Editar categoria
+      description: Exige `chamados.configuracao.administrar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaCategoria' }
+      responses:
+        '200':
+          description: Categoria atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Categoria' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    delete:
+      tags: [cadastros]
+      operationId: excluirCategoria
+      summary: Excluir categoria (soft delete)
+      description: Exige `chamados.configuracao.administrar`.
+      responses:
+        '200':
+          description: Categoria excluída
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/politicas-sla:
+    get:
+      tags: [cadastros]
+      operationId: listarPoliticasSla
+      summary: Listar políticas de SLA
+      description: Exige `chamados.chamado.ver`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de políticas
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/PoliticaSla' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [cadastros]
+      operationId: criarPoliticaSla
+      summary: Criar política de SLA
+      description: |
+        Exige `chamados.configuracao.administrar`. Uma linha por combinação de política e prioridade — é o
+        que permite prazos diferentes por prioridade dentro da mesma política.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaPoliticaSla' }
+      responses:
+        '201':
+          description: Política criada
+          headers:
+            Location:
+              description: Endereço da política criada
+              schema: { type: string, example: /api/chamados/politicas-sla/9f1c4e2a-3b5d-4c7e-8a9b-0c1d2e3f4a5b }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PoliticaSla' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/politicas-sla/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador da política
+        schema: { type: string, format: uuid }
+    put:
+      tags: [cadastros]
+      operationId: editarPoliticaSla
+      summary: Editar política de SLA
+      description: |
+        Exige `chamados.configuracao.administrar`. Não afeta chamados já abertos: o prazo deles foi
+        congelado na abertura.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaPoliticaSla' }
+      responses:
+        '200':
+          description: Política atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PoliticaSla' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    delete:
+      tags: [cadastros]
+      operationId: excluirPoliticaSla
+      summary: Excluir política de SLA (soft delete)
+      description: Exige `chamados.configuracao.administrar`.
+      responses:
+        '200':
+          description: Política excluída
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/contratos-sla:
+    get:
+      tags: [cadastros]
+      operationId: listarVinculosContratoSla
+      summary: Listar vínculos entre contrato e política de SLA
+      description: |
+        Exige `chamados.chamado.ver`. O vínculo mora neste módulo de propósito: assim o módulo de Contratos
+        não precisa conhecer as políticas nem criar campo para elas.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de vínculos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/VinculoContratoSla' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [cadastros]
+      operationId: vincularContratoSla
+      summary: Vincular contrato a uma política
+      description: Exige `chamados.configuracao.administrar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovoVinculoContratoSla' }
+      responses:
+        '201':
+          description: Vínculo criado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/VinculoContratoSla' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '409':
+          description: Este contrato já tem política vinculada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+
+  /api/chamados/contratos-sla/{contratoId}:
+    parameters:
+      - name: contratoId
+        in: path
+        required: true
+        description: Identificador do contrato no módulo de Contratos
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [cadastros]
+      operationId: desvincularContratoSla
+      summary: Remover o vínculo do contrato
+      description: |
+        Exige `chamados.configuracao.administrar`. Chamados novos daquele contrato passam a usar a política
+        padrão.
+      responses:
+        '200':
+          description: Vínculo removido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
   /api/chamados/health:
     get:
       tags: [saude]
@@ -984,3 +1272,84 @@ components:
         usuarioId: { type: string, format: uuid }
         motivo: { type: [string, 'null'], maxLength: 500 }
         ocorridoEm: { type: string, format: date-time, example: '2026-09-17T13:20:00Z' }
+
+    Categoria:
+      type: object
+      required: [id, nome, ativo]
+      properties:
+        id: { type: string, format: uuid, example: 7a1b2c3d-4e5f-4a7b-8c9d-0e1f2a3b4c5d }
+        nome: { type: string, example: Infraestrutura }
+        descricao: { type: [string, 'null'], maxLength: 500 }
+        ativo: { type: boolean, default: true, example: true }
+
+    NovaCategoria:
+      type: object
+      required: [nome]
+      properties:
+        nome: { type: string, minLength: 2, maxLength: 120, example: Infraestrutura }
+        descricao: { type: [string, 'null'], maxLength: 500 }
+        ativo: { type: boolean, default: true, example: true }
+
+    PoliticaSla:
+      type: object
+      required: [id, nome, prioridade, primeiraRespostaMinutos, resolucaoMinutos, regime]
+      properties:
+        id: { type: string, format: uuid, example: 9f1c4e2a-3b5d-4c7e-8a9b-0c1d2e3f4a5b }
+        nome: { type: string, example: Premium 24x7 }
+        prioridade: { type: string, enum: [baixa, media, alta, critica], example: critica }
+        primeiraRespostaMinutos: { type: integer, minimum: 1, example: 15 }
+        resolucaoMinutos: { type: integer, minimum: 1, example: 240 }
+        regime:
+          type: string
+          enum: [corrido, comercial]
+          description: |
+            `corrido` conta 24 horas por dia. `comercial` conta apenas dentro do expediente configurado.
+            Feriados não são considerados em nenhum dos dois — decisão registrada na spec.
+          example: corrido
+        expedienteDias:
+          type: array
+          description: Dias da semana do expediente, de 1 (segunda) a 7 (domingo). Usado só no regime comercial.
+          items: { type: integer, minimum: 1, maximum: 7 }
+          example: [1, 2, 3, 4, 5]
+        expedienteInicio: { type: [string, 'null'], example: '08:00' }
+        expedienteFim: { type: [string, 'null'], example: '18:00' }
+        padrao:
+          type: boolean
+          description: Política aplicada a chamado sem contrato vinculado, incluindo todo chamado interno.
+          default: false
+          example: false
+
+    NovaPoliticaSla:
+      type: object
+      required: [nome, prioridade, primeiraRespostaMinutos, resolucaoMinutos, regime]
+      properties:
+        nome: { type: string, minLength: 2, maxLength: 120, example: Premium 24x7 }
+        prioridade: { type: string, enum: [baixa, media, alta, critica], example: critica }
+        primeiraRespostaMinutos: { type: integer, minimum: 1, example: 15 }
+        resolucaoMinutos: { type: integer, minimum: 1, example: 240 }
+        regime: { type: string, enum: [corrido, comercial], example: corrido }
+        expedienteDias:
+          type: array
+          description: Dias da semana do expediente, de 1 (segunda) a 7 (domingo).
+          items: { type: integer, minimum: 1, maximum: 7 }
+          example: [1, 2, 3, 4, 5]
+        expedienteInicio: { type: [string, 'null'], example: '08:00' }
+        expedienteFim: { type: [string, 'null'], example: '18:00' }
+        padrao: { type: boolean, default: false, example: false }
+
+    VinculoContratoSla:
+      type: object
+      required: [contratoId, politicaId]
+      properties:
+        contratoId:
+          type: string
+          format: uuid
+          description: Referência a `contratos.contratos`, guardada sem chave estrangeira.
+        politicaId: { type: string, format: uuid }
+
+    NovoVinculoContratoSla:
+      type: object
+      required: [contratoId, politicaId]
+      properties:
+        contratoId: { type: string, format: uuid }
+        politicaId: { type: string, format: uuid }
