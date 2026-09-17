@@ -205,6 +205,274 @@ paths:
         '403': { $ref: '#/components/responses/SemPermissao' }
         '404': { $ref: '#/components/responses/NaoEncontrado' }
 
+  /api/chamados/chamados/{id}/atribuir:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: atribuirChamado
+      summary: Designar técnico e colocar em atendimento
+      description: |
+        Exige `chamados.chamado.atribuir`. De `novo` ou `reaberto`, leva a `em_atendimento`.
+        Qualquer outro estado de origem responde 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AtribuirRequest' }
+      responses:
+        '200':
+          description: Chamado atribuído
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/aguardar-cliente:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: aguardarCliente
+      summary: Marcar espera pelo solicitante
+      description: |
+        Exige `chamados.chamado.editar`. Só de `em_atendimento`. **Pausa o relógio do SLA** — a espera não
+        é responsabilidade da equipe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MotivoRequest' }
+      responses:
+        '200':
+          description: Chamado em espera
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/aguardar-fornecedor:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: aguardarFornecedor
+      summary: Marcar espera por terceiro
+      description: |
+        Exige `chamados.chamado.editar`. Só de `em_atendimento`. **Pausa o relógio do SLA.**
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MotivoRequest' }
+      responses:
+        '200':
+          description: Chamado em espera
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/retomar:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: retomarChamado
+      summary: Voltar de uma espera para atendimento
+      description: |
+        Exige `chamados.chamado.editar`. De `aguardando_cliente` ou `aguardando_fornecedor`, leva a
+        `em_atendimento`. Os prazos de SLA são empurrados pela duração da pausa.
+      responses:
+        '200':
+          description: Chamado retomado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/escalar:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: escalarChamado
+      summary: Escalar para outro nível de atendimento
+      description: |
+        Exige `chamados.chamado.editar`. De `novo` ou `em_atendimento`. **Não pausa o relógio** — escalar
+        passa o trabalho adiante, mas o compromisso continua sendo do time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EscalarRequest' }
+      responses:
+        '200':
+          description: Chamado escalado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/resolver:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: resolverChamado
+      summary: Registrar a solução
+      description: |
+        Exige `chamados.chamado.editar`. De `em_atendimento` ou `escalado`. A solução é obrigatória — sem
+        ela o chamado fecharia vazio. Marca `resolvidoEm` e para o relógio de resolução.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResolverRequest' }
+      responses:
+        '200':
+          description: Chamado resolvido
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/fechar:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: fecharChamado
+      summary: Encerrar o chamado
+      description: |
+        Exige `chamados.chamado.fechar`, permissão separada de `editar` de propósito: quem resolve não
+        valida o próprio trabalho. Só de `resolvido`.
+      responses:
+        '200':
+          description: Chamado fechado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/reabrir:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: reabrirChamado
+      summary: Reabrir chamado resolvido ou fechado
+      description: |
+        Exige `chamados.chamado.criar`. De `resolvido` ou `fechado`, leva a `reaberto` e incrementa o
+        contador de reaberturas. De `fechado` não se vai direto a `em_atendimento` — senão a contagem de
+        reaberturas, que é indicador de qualidade, se perde.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MotivoRequest' }
+      responses:
+        '200':
+          description: Chamado reaberto
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
   /api/chamados/health:
     get:
       tags: [saude]
@@ -448,3 +716,43 @@ components:
         assunto: { type: string, minLength: 1, maxLength: 200, example: Servidor de arquivos inacessível }
         descricao: { type: [string, 'null'], maxLength: 8000 }
         documentoIds: { type: array, items: { type: string, format: uuid } }
+
+    AtribuirRequest:
+      type: object
+      required: [tecnicoId]
+      properties:
+        tecnicoId:
+          type: string
+          format: uuid
+          description: Usuário do identity que passa a ser responsável.
+
+    MotivoRequest:
+      type: object
+      required: [motivo]
+      properties:
+        motivo:
+          type: string
+          minLength: 3
+          maxLength: 500
+          example: Aguardando o cliente informar o horário de acesso.
+
+    EscalarRequest:
+      type: object
+      required: [motivo, destino]
+      properties:
+        motivo:
+          type: string
+          minLength: 3
+          maxLength: 500
+          example: Depende de intervenção do fabricante.
+        destino: { type: string, minLength: 2, maxLength: 120, example: Suporte nível 2 }
+
+    ResolverRequest:
+      type: object
+      required: [solucao]
+      properties:
+        solucao:
+          type: string
+          minLength: 3
+          maxLength: 8000
+          example: Serviço de arquivos reiniciado e permissões corrigidas.
