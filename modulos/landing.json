@@ -1,0 +1,14 @@
+{
+  "codigo": "landing",
+  "nome": "Landing Pages e Formulários",
+  "grupo": "Grupo 7 — Rafael",
+  "icone": "layout-template",
+  "urlFrontend": "/modulos/landing/",
+  "prefixoApi": "/api/landing",
+  "permissaoMenu": "landing.acessar",
+  "ordemMenu": 70,
+  "healthcheck": "/api/landing/health",
+  "itensSubmenu": [
+    { "rota": "/envios", "nome": "Envios", "permissao": "landing.envio.ver" }
+  ]
+}
