@@ -20,7 +20,7 @@ a forma executável delas.
 | `modulos/` | Registro de cada módulo no menu da casca | Cada grupo, por PR |
 | `ui/` | Tema Tailwind v4 + shadcn/ui da plataforma | Grupo 2 |
 | `exemplo-modulo/` | Back-end e front de um módulo pronto, para copiar | Grupo 2 |
-| `docs/` | Contrato de Integração, Mapa de Fronteiras, usuários de teste e checklist de conformidade | Grupo 2; o Contrato e o Mapa mudam por PR, com prazo de objeção para os gestores |
+| `docs/` | Contrato de Integração, Mapa de Fronteiras, diagramas C4, usuários de teste e checklist de conformidade | Grupo 2; o Contrato e o Mapa mudam por PR, com prazo de objeção para os gestores |
 | `.github/workflows/` | Validação deste repositório e workflow reutilizável de publicação de imagem | Grupo 2 |
 
 ## Subir o ambiente
@@ -122,6 +122,8 @@ Enquanto o identity não estiver publicado, desenvolva contra os contratos com o
   módulo segue
 - [Mapa de Fronteiras](docs/mapa-de-fronteiras.md) — o que é de cada grupo, o que é
   compartilhado e o que ainda não tem dono
+- [Diagramas C4](docs/c4-contexto-e-conteineres.md) — contexto, contêineres e componentes do
+  identity, em Mermaid, para o desenho mudar junto com o contrato
 - [Manual de implantação](docs/manual-de-implantacao.md) — ambientes, variáveis, subida só com
   imagens publicadas, logs, métricas e cópia de segurança
 
