@@ -1,0 +1,18 @@
+{
+  "codigo": "marketing",
+  "nome": "Marketing",
+  "grupo": "Grupo 4 — Marketing e Automações",
+  "icone": "megaphone",
+  "urlFrontend": "/modulos/marketing/",
+  "prefixoApi": "/api/marketing",
+  "permissaoMenu": "marketing.acessar",
+  "ordemMenu": 50,
+  "healthcheck": "/api/marketing/health",
+  "itensSubmenu": [
+    { "rota": "/painel",        "nome": "Painel",        "permissao": "marketing.dashboard.ver" },
+    { "rota": "/leads",         "nome": "Leads",         "permissao": "marketing.lead.ver" },
+    { "rota": "/formularios",   "nome": "Formulários",   "permissao": "marketing.formulario.ver" },
+    { "rota": "/configuracoes", "nome": "Configurações", "permissao": "marketing.configuracao.ver" }
+  ]
+  
+}

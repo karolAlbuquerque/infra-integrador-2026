@@ -1,0 +1,67 @@
+# Permissões do módulo Marketing e Automações (Grupo 4). Formato: modulo.recurso.acao (Contrato §5.1).
+modulo: marketing
+permissoes:
+  - codigo: marketing.acessar
+    descricao: Ver o módulo Marketing no menu
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: marketing.dashboard.ver
+    descricao: Ver o painel do marketing (funil, qualificação, campanhas, custo e distribuição), com atualização em tempo real
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: marketing.lead.ver
+    descricao: Ver a lista de leads, o detalhe de cada um e buscá-los pelo nome
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: marketing.lead.ver_resumo
+    descricao: Ver o resumo de um lead (origem, etapa, qualificação e vendedor), para outros módulos
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: marketing.qualificacao.ver
+    descricao: Ver as regras de pontuação, as faixas de qualificação e o rodízio de vendedores
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: marketing.qualificacao.editar
+    descricao: Editar as regras de pontuação, as faixas, o rodízio e reatribuir o vendedor de um lead
+    perfisPadrao: [ADMINISTRADOR, MARKETING]
+
+  - codigo: marketing.configuracao.ver
+    descricao: Ver as preferências dos canais de anúncio
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: marketing.configuracao.editar
+    descricao: Editar as preferências dos canais de anúncio e as credenciais do Meta (webhook e página)
+    perfisPadrao: [ADMINISTRADOR, MARKETING]
+
+  - codigo: marketing.template.ver
+    descricao: Ver os modelos de mensagem de aquecimento
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: marketing.template.criar
+    descricao: Criar modelo de mensagem de aquecimento
+    perfisPadrao: [ADMINISTRADOR, MARKETING]
+
+  - codigo: marketing.template.editar
+    descricao: Editar, ativar e desativar modelo de mensagem de aquecimento
+    perfisPadrao: [ADMINISTRADOR, MARKETING]
+
+  - codigo: marketing.template.excluir
+    descricao: Excluir modelo de mensagem de aquecimento
+    perfisPadrao: [ADMINISTRADOR, MARKETING]
+
+  - codigo: marketing.automacao.ver
+    descricao: Ver o ciclo de vida do lead (tentativas e prazos de retenção)
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: marketing.automacao.editar
+    descricao: Editar o ciclo de vida do lead (tentativas e prazos de retenção LGPD)
+    perfisPadrao: [ADMINISTRADOR, MARKETING]
+
+  - codigo: marketing.formulario.ver
+    descricao: Ver os campos dos formulários de captação
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+    servicos: [landing]
+
+  - codigo: marketing.formulario.editar
+    descricao: Criar, editar e publicar os campos dos formulários de captação
+    perfisPadrao: [ADMINISTRADOR, MARKETING]
