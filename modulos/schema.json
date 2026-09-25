@@ -28,6 +28,11 @@
     "permissaoMenu": { "type": "string", "pattern": "^[a-z]+\\.acessar$" },
     "ordemMenu": { "type": "integer", "minimum": 1, "maximum": 999 },
     "healthcheck": { "type": "string", "pattern": "^/api/[a-z]+/health$" },
+    "busca": {
+      "type": "boolean",
+      "default": false,
+      "description": "O módulo responde GET {prefixoApi}/busca?q= (Contrato §8.6) e entra na busca global da casca. Ausente = false."
+    },
     "itensSubmenu": {
       "type": "array",
       "items": {

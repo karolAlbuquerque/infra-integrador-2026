@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Identity — Plataforma e Controle de Usuários
-  version: 0.3.0
+  version: 0.4.0
   summary: Endpoints do serviço de identidade consumidos pela casca e pelos outros módulos.
   description: |
     Contrato das ondas 1, 2 e 3 do Grupo 2. As regras gerais estão no Contrato de Integração:
@@ -15,12 +15,22 @@ info:
     auditoria (RF50), o fim da sessão na resposta de login e renovação (RF41) e o resolver de
     tenant por subdomínio para a superfície pública (RF31).
 
+    A onda 4 acrescenta a verificação em duas etapas (RF10): com o segundo fator ativo — ou
+    obrigatório e ainda não cadastrado — o login devolve um desafio em vez da sessão, e a sessão
+    sai só com o código do aplicativo autenticador ou um código de recuperação. Acrescenta também
+    o tema guardado na conta (RF40), a parte do identity na busca global (RF55, Contrato §8.6) e a
+    exportação e anonimização dos dados pessoais (RF56, LGPD art. 18). O token de serviço não muda.
+
     Códigos de regra de negócio (422) e de conflito (409) vêm em `errors[].codigo`:
     `EMAIL_EM_USO`, `NOME_EM_USO`, `SENHA_FRACA`, `SENHA_ATUAL_INCORRETA`, `LINK_INVALIDO`,
     `AUTOPROTECAO`, `ULTIMO_ADMINISTRADOR`, `PERMISSAO_NAO_CONCEDIVEL`, `PERFIL_INEXISTENTE`,
     `EQUIPE_INEXISTENTE`, `USUARIO_INEXISTENTE`, `PERMISSAO_INEXISTENTE`, `PERFIL_DE_SISTEMA`,
     `PERFIL_EM_USO`, `USUARIO_INATIVO`, `CONVITE_DESNECESSARIO`, `PERIODO_INVALIDO`,
-    `LIMITE_DE_EXPORTACAO`.
+    `LIMITE_DE_EXPORTACAO`, `SENHA_INCORRETA`, `CODIGO_INVALIDO`, `CODIGO_OBRIGATORIO`,
+    `TROCA_NAO_INICIADA`, `SEGUNDO_FATOR_INATIVO`, `USUARIO_ATIVO`, `USUARIO_ANONIMIZADO`,
+    `JA_ANONIMIZADO`, `CONFIRMACAO_INCORRETA`. No 401 das etapas do segundo fator,
+    `errors[0].codigo` diz o que fazer: `CODIGO_INVALIDO` (tentar de novo) ou `DESAFIO_EXPIRADO`
+    (voltar à senha).
 
     Toda resposta usa o envelope `{ success, data, message, errors }`, com duas exceções:
     o JWKS segue o formato padrão da RFC 7517, para que o Spring o leia sem configuração, e o
@@ -63,6 +73,12 @@ tags:
     description: Notificações do próprio usuário (casca)
   - name: auditoria
     description: Consulta e exportação da auditoria de acesso (casca)
+  - name: segundo-fator
+    description: Verificação em duas etapas no login e na conta
+  - name: dados-pessoais
+    description: Exportação e anonimização (LGPD)
+  - name: busca
+    description: Parte do identity na busca global da casca
   - name: saude
     description: Estado do serviço
 
@@ -76,6 +92,12 @@ paths:
         Devolve o access token no corpo e grava o refresh token num cookie `HttpOnly`,
         `Secure` e `SameSite=Strict`, restrito a `/api/identity/auth`. Credencial inválida,
         usuário inativo e e-mail inexistente respondem todos 401 com a mesma mensagem.
+
+        Com o segundo fator ativo, ou obrigatório e ainda não cadastrado, a senha certa responde
+        200 com um `DesafioDeSegundoFator`, **sem cookie e sem access token**. A casca distingue
+        as duas respostas pelo campo `desafio`. O segundo fator é obrigatório para todos, menos no
+        perfil `dev` (variável `IDENTITY_EXIGIR_SEGUNDO_FATOR`), para os usuários de teste
+        entrarem com um POST só.
       security: []
       requestBody:
         required: true
@@ -84,11 +106,49 @@ paths:
             schema: { $ref: '#/components/schemas/Credenciais' }
       responses:
         '200':
+          description: Sessão aberta, ou o desafio do segundo fator
+          headers:
+            Set-Cookie:
+              description: Refresh token, válido por 8 horas — só quando a sessão abre
+              schema: { type: string, example: 'refresh_token=d41f8c...; HttpOnly; Secure; SameSite=Strict; Path=/api/identity/auth; Max-Age=28800' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        oneOf:
+                          - $ref: '#/components/schemas/SessaoAberta'
+                          - $ref: '#/components/schemas/DesafioDeSegundoFator'
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '429': { $ref: '#/components/responses/MuitasTentativas' }
+
+  /api/identity/auth/login/segundo-fator:
+    post:
+      tags: [segundo-fator]
+      operationId: concluirLoginComCodigo
+      summary: Segunda etapa do login — código do aplicativo ou código de recuperação
+      description: |
+        Informe um dos dois. O código do aplicativo tem seis dígitos e vale 30 segundos, com um
+        passo de tolerância para cada lado; um código já aceito não vale de novo. O código de
+        recuperação é de uso único e o dono da conta recebe um e-mail quando um é usado. Cada
+        erro conta no limite de cinco falhas em quinze minutos do login; cinco erros no mesmo
+        desafio o encerram.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CodigoDoDesafio' }
+      responses:
+        '200':
           description: Sessão aberta
           headers:
             Set-Cookie:
               description: Refresh token, válido por 8 horas
-              schema: { type: string, example: 'refresh_token=d41f8c...; HttpOnly; Secure; SameSite=Strict; Path=/api/identity/auth; Max-Age=28800' }
+              schema: { type: string }
           content:
             application/json:
               schema:
@@ -97,7 +157,66 @@ paths:
                   - properties:
                       data: { $ref: '#/components/schemas/SessaoAberta' }
         '400': { $ref: '#/components/responses/DadosInvalidos' }
-        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '401': { $ref: '#/components/responses/SegundoFatorRecusado' }
+        '429': { $ref: '#/components/responses/MuitasTentativas' }
+
+  /api/identity/auth/login/segundo-fator/cadastro:
+    post:
+      tags: [segundo-fator]
+      operationId: iniciarCadastroDoSegundoFator
+      summary: Primeiro acesso — o segredo e a URI do QR Code
+      description: |
+        Só para desafio com `etapa = cadastro_segundo_fator`. Pedir de novo, enquanto o desafio
+        valer, devolve o mesmo segredo (a tela pode ter sido recarregada depois de o QR ser lido).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DesafioDeCadastro' }
+      responses:
+        '200':
+          description: Segredo para o aplicativo autenticador
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/CadastroDeSegundoFator' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/SegundoFatorRecusado' }
+
+  /api/identity/auth/login/segundo-fator/cadastro/confirmar:
+    post:
+      tags: [segundo-fator]
+      operationId: confirmarCadastroDoSegundoFator
+      summary: Primeiro código do aplicativo — ativa o segundo fator e abre a sessão
+      description: |
+        A resposta traz os dez códigos de recuperação em `codigosRecuperacao`. É a única vez em
+        que eles aparecem: o banco guarda só o hash.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CodigoDoDesafio' }
+      responses:
+        '200':
+          description: Segundo fator ativo e sessão aberta
+          headers:
+            Set-Cookie:
+              description: Refresh token, válido por 8 horas
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/SessaoAberta' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/SegundoFatorRecusado' }
         '429': { $ref: '#/components/responses/MuitasTentativas' }
 
   /api/identity/auth/refresh:
@@ -382,6 +501,181 @@ paths:
         '400': { $ref: '#/components/responses/DadosInvalidos' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
 
+  /api/identity/conta/tema:
+    put:
+      tags: [conta]
+      operationId: trocarTema
+      summary: Guardar o tema na conta (RF40)
+      description: O tema vale em qualquer navegador; volta no login, na renovação e em `/auth/me`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Tema' }
+      responses:
+        '200':
+          description: Tema guardado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Tema' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+
+  /api/identity/conta/dados-pessoais:
+    get:
+      tags: [conta, dados-pessoais]
+      operationId: baixarMeusDados
+      summary: Tudo o que o identity guarda do próprio usuário (RF56, LGPD art. 18, II)
+      description: Auditado como `exportar_dados_pessoais`.
+      responses:
+        '200':
+          description: Dados pessoais
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/ExportacaoDeDadosPessoais' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+
+  /api/identity/conta/segundo-fator:
+    get:
+      tags: [conta, segundo-fator]
+      operationId: situacaoDoSegundoFator
+      summary: Se o segundo fator está ativo e quantos códigos de recuperação restam
+      responses:
+        '200':
+          description: Situação
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/SituacaoDoSegundoFator' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+
+  /api/identity/conta/segundo-fator/troca:
+    post:
+      tags: [conta, segundo-fator]
+      operationId: iniciarTrocaDeAparelho
+      summary: Começar a troca de aparelho
+      description: |
+        Pede a senha e, com o segundo fator ativo, o código atual ou um código de recuperação.
+        Devolve o segredo novo, que só passa a valer quando o primeiro código dele for confirmado.
+        Não existe rota para desativar o segundo fator. Senha ou código errado contam no limite
+        de tentativas do login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmacaoDeIdentidade' }
+      responses:
+        '200':
+          description: Segredo do aparelho novo
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/CadastroDeSegundoFator' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '429': { $ref: '#/components/responses/MuitasTentativas' }
+
+  /api/identity/conta/segundo-fator/troca/confirmar:
+    post:
+      tags: [conta, segundo-fator]
+      operationId: confirmarTrocaDeAparelho
+      summary: Primeiro código do aparelho novo — o anterior deixa de valer
+      description: Devolve dez códigos de recuperação novos; os anteriores deixam de valer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [codigo]
+              properties:
+                codigo: { type: string, pattern: '^[0-9 ]{6,10}$', example: '482913' }
+      responses:
+        '200':
+          description: Aparelho trocado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/CodigosDeRecuperacao' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/conta/segundo-fator/codigos:
+    post:
+      tags: [conta, segundo-fator]
+      operationId: gerarCodigosDeRecuperacao
+      summary: Dez códigos de recuperação novos
+      description: Pede senha e código, como a troca de aparelho. Os códigos anteriores deixam de valer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmacaoDeIdentidade' }
+      responses:
+        '200':
+          description: Códigos novos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/CodigosDeRecuperacao' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+        '429': { $ref: '#/components/responses/MuitasTentativas' }
+
+  /api/identity/busca:
+    get:
+      tags: [busca]
+      operationId: buscar
+      summary: Usuários do tenant pelo nome ou e-mail, para a busca global (Contrato §8.6)
+      description: |
+        Exige `identity.usuario.ver`; sem ela, 403, e a casca omite o identity do resultado.
+        As telas do identity são da própria casca, então `rota` é um caminho da casca
+        (`/admin/usuarios?usuario={id}`), e não relativa a um `urlFrontend`. Usuário anonimizado
+        não aparece.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 100, example: maria }
+      responses:
+        '200':
+          description: Até cinco usuários
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        maxItems: 5
+                        items: { $ref: '#/components/schemas/ItemDaBusca' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
   /api/identity/.well-known/jwks.json:
     get:
       tags: [chaves]
@@ -591,6 +885,90 @@ paths:
         - $ref: '#/components/parameters/IdNoCaminho'
       responses:
         '200': { $ref: '#/components/responses/UsuarioSalvo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/usuarios/{id}/segundo-fator/redefinir:
+    post:
+      tags: [usuarios, segundo-fator]
+      operationId: redefinirSegundoFator
+      summary: Redefinir o segundo fator de quem perdeu o celular e os códigos
+      description: |
+        Apaga o segredo e os códigos de recuperação, encerra as sessões e avisa o usuário por
+        e-mail. No próximo login, o cadastro do aplicativo é pedido de novo. Exige
+        `identity.usuario.administrar` e todas as permissões do usuário alvo. Auditado.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      responses:
+        '200':
+          description: Segundo fator redefinido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsuarioSalvo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '422': { $ref: '#/components/responses/RegraDeNegocio' }
+
+  /api/identity/usuarios/{id}/dados-pessoais:
+    get:
+      tags: [usuarios, dados-pessoais]
+      operationId: exportarDadosPessoais
+      summary: Tudo o que o identity guarda de um usuário (RF56, LGPD art. 18, II)
+      description: Exige `identity.usuario.dados_pessoais` (só ADMINISTRADOR, por padrão). Auditado.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      responses:
+        '200':
+          description: Dados pessoais
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/ExportacaoDeDadosPessoais' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/identity/usuarios/{id}/anonimizar:
+    post:
+      tags: [usuarios, dados-pessoais]
+      operationId: anonimizarUsuario
+      summary: Anonimizar um usuário desativado (RF56, LGPD art. 18, IV) — irreversível
+      description: |
+        Nome vira "Usuário anonimizado", e-mail vira `anonimizado-{id}@invalido`; telefone, senha,
+        segundo fator, sessões, links, notificações, perfis, equipes e tentativas de login são
+        apagados. O `id` fica, para a autoria dos registros continuar de pé. A auditoria não muda:
+        é registro obrigatório (LGPD art. 16, I) e o banco proíbe alterá-la. Depois do commit,
+        publica `identity.usuario.anonimizado` em `identity.eventos`, para os módulos que
+        guardaram cópia do nome. Exige `identity.usuario.dados_pessoais`; o usuário precisa estar
+        desativado e `confirmacao` precisa ser o e-mail dele.
+      parameters:
+        - $ref: '#/components/parameters/IdNoCaminho'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmacao]
+              properties:
+                confirmacao: { type: string, maxLength: 254, example: maria@centinela.com.br }
+      responses:
+        '200':
+          description: Usuário anonimizado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/UsuarioDetalhe' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
         '403': { $ref: '#/components/responses/SemPermissao' }
         '404': { $ref: '#/components/responses/NaoEncontrado' }
@@ -1288,6 +1666,19 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Envelope' }
           example: { success: false, data: null, message: Muitas tentativas. Aguarde 15 minutos., errors: [] }
+    SegundoFatorRecusado:
+      description: |
+        Código errado (`CODIGO_INVALIDO`: tentar de novo) ou desafio vencido, usado ou encerrado
+        por excesso de erros (`DESAFIO_EXPIRADO`: voltar à senha)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: Código inválido.
+            errors:
+              - { campo: codigo, codigo: CODIGO_INVALIDO, detalhe: Código inválido. }
     Conflito:
       description: Duplicidade — e-mail já usado por outro usuário não excluído, ou nome já usado no tenant
       content:
@@ -1364,6 +1755,12 @@ components:
         nome: { type: string, example: Vendedor da Empresa A }
         email: { type: string, format: email, example: vendedor@empresa-a.dev }
         tenantId: { type: string, format: uuid, example: a0000000-0000-4000-8000-00000000000a }
+        tema: { $ref: '#/components/schemas/PreferenciaDeTema' }
+
+    PreferenciaDeTema:
+      type: string
+      enum: [claro, escuro, sistema]
+      description: Guardado na conta (RF40); `sistema` segue o `prefers-color-scheme` do navegador.
 
     SessaoAberta:
       type: object
@@ -1378,6 +1775,158 @@ components:
             Fim da sessão, oito horas depois do login; a renovação não o adia. A casca avisa antes
             e pede a senha de novo sem sair da tela (RF41).
         usuario: { $ref: '#/components/schemas/Usuario' }
+        codigosRecuperacao:
+          type: array
+          items: { type: string, example: ABCDE-FGHJK }
+          description: Só na resposta que conclui o cadastro do segundo fator — a única vez em que aparecem.
+
+    DesafioDeSegundoFator:
+      type: object
+      required: [etapa, desafio, desafioExpiraEm]
+      description: Senha certa, falta o segundo fator. Nada de cookie nem de access token ainda.
+      properties:
+        etapa:
+          type: string
+          enum: [segundo_fator, cadastro_segundo_fator]
+          description: |
+            `segundo_fator`: pedir o código do aplicativo (ou um código de recuperação).
+            `cadastro_segundo_fator`: primeiro acesso — mostrar o QR Code.
+        desafio: { type: string, description: Token opaco de uso único; vive 5 minutos }
+        desafioExpiraEm: { type: string, format: date-time }
+
+    CodigoDoDesafio:
+      type: object
+      required: [desafio]
+      description: Informe `codigo` ou `codigoRecuperacao`, um dos dois.
+      properties:
+        desafio: { type: string, maxLength: 100 }
+        codigo: { type: string, pattern: '^[0-9 ]{6,10}$', example: '482913' }
+        codigoRecuperacao: { type: string, maxLength: 20, example: ABCDE-FGHJK }
+
+    DesafioDeCadastro:
+      type: object
+      required: [desafio]
+      properties:
+        desafio: { type: string, maxLength: 100 }
+
+    CadastroDeSegundoFator:
+      type: object
+      required: [segredo, uri]
+      properties:
+        segredo:
+          type: string
+          description: Base32, para digitar no aplicativo quando não der para ler o QR Code
+          example: JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP
+        uri:
+          type: string
+          description: Conteúdo do QR Code (formato Key Uri do Google Authenticator)
+          example: otpauth://totp/Plataforma%20Integrada:maria%40centinela.com.br?secret=JBSWY3DPEHPK3PXP&issuer=Plataforma%20Integrada&algorithm=SHA1&digits=6&period=30
+
+    CodigosDeRecuperacao:
+      type: object
+      required: [codigosRecuperacao]
+      properties:
+        codigosRecuperacao:
+          type: array
+          minItems: 10
+          maxItems: 10
+          items: { type: string, example: ABCDE-FGHJK }
+
+    ConfirmacaoDeIdentidade:
+      type: object
+      required: [senha]
+      description: Com o segundo fator ativo, `codigo` ou `codigoRecuperacao` também.
+      properties:
+        senha: { type: string, maxLength: 72 }
+        codigo: { type: string, pattern: '^[0-9 ]{6,10}$' }
+        codigoRecuperacao: { type: string, maxLength: 20 }
+
+    SituacaoDoSegundoFator:
+      type: object
+      required: [ativo, codigosRestantes, obrigatorio]
+      properties:
+        ativo: { type: boolean }
+        ativadoEm: { type: [string, 'null'], format: date-time }
+        codigosRestantes: { type: integer, minimum: 0, maximum: 10 }
+        obrigatorio: { type: boolean, description: Falso só no perfil dev }
+
+    Tema:
+      type: object
+      required: [tema]
+      properties:
+        tema: { $ref: '#/components/schemas/PreferenciaDeTema' }
+
+    ItemDaBusca:
+      type: object
+      required: [id, titulo, rota]
+      description: Formato comum da busca global (Contrato §8.6)
+      properties:
+        id: { type: string, format: uuid }
+        titulo: { type: string, example: Maria Souza }
+        subtitulo: { type: [string, 'null'], example: maria@centinela.com.br }
+        rota: { type: string, example: /admin/usuarios?usuario=9f1c4e2a-6b1d-4c1e-9a55-2d3e4f5a6b7c }
+
+    ExportacaoDeDadosPessoais:
+      type: object
+      required: [geradoEm, cadastro, perfis, equipes, sessoes, tentativasDeLogin, notificacoes, acoes]
+      properties:
+        geradoEm: { type: string, format: date-time }
+        cadastro:
+          type: object
+          required: [id, nome, email, tema, ativo, segundoFatorAtivo, criadoEm]
+          properties:
+            id: { type: string, format: uuid }
+            nome: { type: string }
+            email: { type: string }
+            telefone: { type: [string, 'null'] }
+            tema: { $ref: '#/components/schemas/PreferenciaDeTema' }
+            ativo: { type: boolean }
+            segundoFatorAtivo: { type: boolean }
+            criadoEm: { type: string, format: date-time }
+            ultimoLoginEm: { type: [string, 'null'], format: date-time }
+            anonimizadoEm: { type: [string, 'null'], format: date-time }
+        perfis: { type: array, items: { type: string } }
+        equipes: { type: array, items: { type: string } }
+        sessoes:
+          type: array
+          items:
+            type: object
+            properties:
+              sessaoId: { type: string, format: uuid }
+              ip: { type: [string, 'null'] }
+              navegador: { type: [string, 'null'] }
+              iniciadaEm: { type: string, format: date-time }
+              expiraEm: { type: string, format: date-time }
+              encerradaEm: { type: [string, 'null'], format: date-time }
+        tentativasDeLogin:
+          type: array
+          items:
+            type: object
+            properties:
+              em: { type: string, format: date-time }
+              ip: { type: [string, 'null'] }
+              sucesso: { type: boolean }
+        notificacoes:
+          type: array
+          items:
+            type: object
+            properties:
+              em: { type: string, format: date-time }
+              categoria: { type: string }
+              titulo: { type: string }
+              texto: { type: [string, 'null'] }
+              lidaEm: { type: [string, 'null'], format: date-time }
+        acoes:
+          type: array
+          description: O que a pessoa fez, segundo a auditoria
+          items:
+            type: object
+            properties:
+              em: { type: string, format: date-time }
+              acao: { type: string }
+              entidade: { type: string }
+              entidadeId: { type: [string, 'null'], format: uuid }
+              ip: { type: [string, 'null'] }
 
     Eu:
       type: object
@@ -1435,7 +1984,7 @@ components:
 
     ModuloDoMenu:
       type: object
-      required: [codigo, nome, urlFrontend, prefixoApi, ordemMenu, disponivel, itensSubmenu]
+      required: [codigo, nome, urlFrontend, prefixoApi, ordemMenu, disponivel, itensSubmenu, busca]
       properties:
         codigo: { type: string, example: crm }
         nome: { type: string, example: CRM }
@@ -1446,6 +1995,9 @@ components:
         disponivel:
           type: boolean
           description: Resultado do último healthcheck
+        busca:
+          type: boolean
+          description: O módulo responde `GET {prefixoApi}/busca` e entra na busca global (Contrato §8.6)
         itensSubmenu:
           type: array
           items:
@@ -1565,6 +2117,8 @@ components:
           items: { $ref: '#/components/schemas/EquipeDoUsuario' }
         ultimoLoginEm: { type: [string, 'null'], format: date-time }
         criadoEm: { type: string, format: date-time }
+        tema: { $ref: '#/components/schemas/PreferenciaDeTema' }
+        segundoFatorAtivo: { type: boolean }
 
     EdicaoDeConta:
       type: object
@@ -1583,10 +2137,11 @@ components:
 
     SituacaoDoUsuario:
       type: string
-      enum: [ativo, convite_pendente, convite_expirado, inativo]
+      enum: [ativo, convite_pendente, convite_expirado, inativo, anonimizado]
       description: |
         `ativo` já definiu senha; `convite_pendente` e `convite_expirado` ainda não, com convite
-        válido ou vencido; `inativo` foi desativado.
+        válido ou vencido; `inativo` foi desativado; `anonimizado` teve os dados pessoais apagados
+        (RF56) e não pode ser alterado.
 
     PerfilDoUsuario:
       type: object
@@ -1633,6 +2188,7 @@ components:
               type: [string, 'null']
               format: date-time
               description: Validade do convite pendente, se houver
+            segundoFatorAtivo: { type: boolean }
 
     CadastroDeUsuario:
       type: object
