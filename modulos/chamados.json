@@ -1,0 +1,16 @@
+{
+  "codigo": "chamados",
+  "nome": "Chamados",
+  "grupo": "Grupo 3 — Pedro",
+  "icone": "life-buoy",
+  "urlFrontend": "/modulos/chamados/",
+  "prefixoApi": "/api/chamados",
+  "permissaoMenu": "chamados.acessar",
+  "ordemMenu": 60,
+  "healthcheck": "/api/chamados/health",
+  "itensSubmenu": [
+    { "rota": "/", "nome": "Fila de chamados", "permissao": "chamados.chamado.ver" },
+    { "rota": "/relatorios", "nome": "Relatórios", "permissao": "chamados.chamado.ver" },
+    { "rota": "/configuracoes", "nome": "Categorias e SLA", "permissao": "chamados.configuracao.administrar" }
+  ]
+}

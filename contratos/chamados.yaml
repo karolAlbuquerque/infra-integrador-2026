@@ -1,0 +1,1716 @@
+openapi: 3.1.0
+info:
+  title: Chamados e Relatórios — Grupo 3
+  version: 0.1.0
+  summary: Help desk com SLA e motor de relatórios da plataforma.
+  description: |
+    Endpoints do módulo `chamados`. Abertura e ciclo de vida de chamados técnicos (internos e de cliente),
+    controle de SLA com pausa, interações, apontamentos de horas e os relatórios técnicos.
+    Publicado antes da implementação, conforme §14.1 do Contrato de Integração.
+  license:
+    name: Uso acadêmico — Projeto Integrador 2026
+    identifier: LicenseRef-Academico
+servers:
+  - url: http://localhost:8080
+    description: Pelo gateway
+  - url: http://chamados:8086
+    description: Direto, entre serviços
+tags:
+  - name: chamados
+    description: Abertura, consulta e edição de chamados
+  - name: ciclo-de-vida
+    description: Transições de estado do chamado
+  - name: interacoes
+    description: Notas internas e respostas ao solicitante
+  - name: apontamentos
+    description: Horas trabalhadas no chamado
+  - name: cadastros
+    description: Categorias, políticas de SLA e vínculo com contrato
+  - name: integracao
+    description: Endpoints consumidos por outros módulos
+  - name: relatorios
+    description: Relatórios técnicos
+  - name: saude
+    description: Estado do serviço
+
+security:
+  - bearerJwt: []
+
+paths:
+  /api/chamados/chamados:
+    get:
+      tags: [chamados]
+      operationId: listarChamados
+      summary: Listar chamados do tenant
+      description: Exige `chamados.chamado.ver`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - name: status
+          in: query
+          description: Filtra por um ou mais status
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [novo, em_atendimento, aguardando_cliente, aguardando_fornecedor, escalado, resolvido, fechado, reaberto]
+        - name: prioridade
+          in: query
+          description: Filtra por prioridade
+          schema: { type: string, enum: [baixa, media, alta, critica] }
+        - name: tipo
+          in: query
+          description: Filtra chamados internos ou de cliente
+          schema: { type: string, enum: [interno, cliente] }
+        - name: categoriaId
+          in: query
+          description: Filtra por categoria
+          schema: { type: string, format: uuid }
+        - name: tecnicoId
+          in: query
+          description: Filtra por técnico responsável
+          schema: { type: string, format: uuid }
+        - name: empresaId
+          in: query
+          description: Filtra por empresa do CRM
+          schema: { type: string, format: uuid }
+        - name: de
+          in: query
+          description: Data inicial de abertura
+          schema: { type: string, format: date }
+        - name: ate
+          in: query
+          description: Data final de abertura
+          schema: { type: string, format: date }
+        - name: vencendo
+          in: query
+          description: Apenas chamados em aberto cujo prazo de resolução vence nas próximas 24 horas
+          schema: { type: boolean, default: false }
+        - name: ordenar
+          in: query
+          description: Campo e direção
+          schema:
+            type: string
+            enum: ['criadoEm,desc', 'criadoEm,asc', 'venceResolucaoEm,asc', 'prioridade,desc']
+            default: 'criadoEm,desc'
+      responses:
+        '200':
+          description: Página de chamados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/ChamadoResumo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [chamados]
+      operationId: criarChamado
+      summary: Abrir chamado
+      description: |
+        Exige `chamados.chamado.criar`. O prazo de SLA é calculado e congelado neste momento, a partir da
+        política vinculada ao contrato ou, na ausência dela, da política padrão.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovoChamado' }
+      responses:
+        '201':
+          description: Chamado aberto
+          headers:
+            Location:
+              description: Endereço do chamado criado
+              schema: { type: string, example: /api/chamados/chamados/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/chamados/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    get:
+      tags: [chamados]
+      operationId: verChamado
+      summary: Ver um chamado
+      description: Exige `chamados.chamado.ver`. Chamado de outro tenant responde 404.
+      responses:
+        '200':
+          description: Chamado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [chamados]
+      operationId: editarChamado
+      summary: Editar campos do chamado
+      description: Exige `chamados.chamado.editar`. Não altera status.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AtualizarChamado' }
+      responses:
+        '200':
+          description: Chamado atualizado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    delete:
+      tags: [chamados]
+      operationId: excluirChamado
+      summary: Excluir chamado (soft delete)
+      description: Exige `chamados.chamado.excluir`.
+      responses:
+        '200':
+          description: Chamado excluído
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/chamados/{id}/atribuir:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: atribuirChamado
+      summary: Designar técnico e colocar em atendimento
+      description: |
+        Exige `chamados.chamado.atribuir`. De `novo` ou `reaberto`, leva a `em_atendimento`.
+        Qualquer outro estado de origem responde 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AtribuirRequest' }
+      responses:
+        '200':
+          description: Chamado atribuído
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/aguardar-cliente:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: aguardarCliente
+      summary: Marcar espera pelo solicitante
+      description: |
+        Exige `chamados.chamado.editar`. Só de `em_atendimento`. **Pausa o relógio do SLA** — a espera não
+        é responsabilidade da equipe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MotivoRequest' }
+      responses:
+        '200':
+          description: Chamado em espera
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/aguardar-fornecedor:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: aguardarFornecedor
+      summary: Marcar espera por terceiro
+      description: |
+        Exige `chamados.chamado.editar`. Só de `em_atendimento`. **Pausa o relógio do SLA.**
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MotivoRequest' }
+      responses:
+        '200':
+          description: Chamado em espera
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/retomar:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: retomarChamado
+      summary: Voltar de uma espera para atendimento
+      description: |
+        Exige `chamados.chamado.editar`. De `aguardando_cliente` ou `aguardando_fornecedor`, leva a
+        `em_atendimento`. Os prazos de SLA são empurrados pela duração da pausa.
+      responses:
+        '200':
+          description: Chamado retomado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/escalar:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: escalarChamado
+      summary: Escalar para outro nível de atendimento
+      description: |
+        Exige `chamados.chamado.editar`. De `novo` ou `em_atendimento`. **Não pausa o relógio** — escalar
+        passa o trabalho adiante, mas o compromisso continua sendo do time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EscalarRequest' }
+      responses:
+        '200':
+          description: Chamado escalado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/resolver:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: resolverChamado
+      summary: Registrar a solução
+      description: |
+        Exige `chamados.chamado.editar`. De `em_atendimento` ou `escalado`. A solução é obrigatória — sem
+        ela o chamado fecharia vazio. Marca `resolvidoEm` e para o relógio de resolução.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResolverRequest' }
+      responses:
+        '200':
+          description: Chamado resolvido
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/fechar:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: fecharChamado
+      summary: Encerrar o chamado
+      description: |
+        Exige `chamados.chamado.fechar`, permissão separada de `editar` de propósito: quem resolve não
+        valida o próprio trabalho. Só de `resolvido`.
+      responses:
+        '200':
+          description: Chamado fechado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/reabrir:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    post:
+      tags: [ciclo-de-vida]
+      operationId: reabrirChamado
+      summary: Reabrir chamado resolvido ou fechado
+      description: |
+        Exige `chamados.chamado.criar`. De `resolvido` ou `fechado`, leva a `reaberto` e incrementa o
+        contador de reaberturas. De `fechado` não se vai direto a `em_atendimento` — senão a contagem de
+        reaberturas, que é indicador de qualidade, se perde.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MotivoRequest' }
+      responses:
+        '200':
+          description: Chamado reaberto
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Chamado' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/EstadoInvalido' }
+
+  /api/chamados/chamados/{id}/interacoes:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    get:
+      tags: [interacoes]
+      operationId: listarInteracoes
+      summary: Listar interações do chamado
+      description: |
+        Exige `chamados.chamado.ver`. Quem não é da equipe recebe apenas as interações de visibilidade
+        `publica`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de interações
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Interacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    post:
+      tags: [interacoes]
+      operationId: criarInteracao
+      summary: Registrar nota interna ou resposta ao solicitante
+      description: |
+        Exige `chamados.chamado.editar`. A primeira interação `publica` de um técnico preenche
+        `primeiraRespostaEm` do chamado. Nota interna não conta.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaInteracao' }
+      responses:
+        '201':
+          description: Interação registrada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Interacao' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/chamados/{id}/apontamentos:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    get:
+      tags: [apontamentos]
+      operationId: listarApontamentos
+      summary: Listar horas apontadas no chamado
+      description: Exige `chamados.chamado.ver`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de apontamentos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Apontamento' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    post:
+      tags: [apontamentos]
+      operationId: criarApontamento
+      summary: Apontar horas trabalhadas
+      description: |
+        Exige `chamados.chamado.editar`. É a fonte de "horas por cliente" e "chamados por técnico" — um
+        campo único editável no chamado não seria auditável.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovoApontamento' }
+      responses:
+        '201':
+          description: Apontamento registrado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Apontamento' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/chamados/{id}/transicoes:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+    get:
+      tags: [ciclo-de-vida]
+      operationId: listarTransicoes
+      summary: Histórico de mudanças de estado
+      description: |
+        Exige `chamados.chamado.ver`. É a fonte de verdade do tempo em cada etapa e do desconto das pausas
+        no SLA.
+      responses:
+        '200':
+          description: Histórico em ordem cronológica
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Transicao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/categorias:
+    get:
+      tags: [cadastros]
+      operationId: listarCategorias
+      summary: Listar categorias de chamado
+      description: Exige `chamados.chamado.ver`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de categorias
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Categoria' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [cadastros]
+      operationId: criarCategoria
+      summary: Criar categoria
+      description: Exige `chamados.configuracao.administrar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaCategoria' }
+      responses:
+        '201':
+          description: Categoria criada
+          headers:
+            Location:
+              description: Endereço da categoria criada
+              schema: { type: string, example: /api/chamados/categorias/7a1b2c3d-4e5f-4a7b-8c9d-0e1f2a3b4c5d }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Categoria' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/categorias/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador da categoria
+        schema: { type: string, format: uuid }
+    put:
+      tags: [cadastros]
+      operationId: editarCategoria
+      summary: Editar categoria
+      description: Exige `chamados.configuracao.administrar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaCategoria' }
+      responses:
+        '200':
+          description: Categoria atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Categoria' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    delete:
+      tags: [cadastros]
+      operationId: excluirCategoria
+      summary: Excluir categoria (soft delete)
+      description: Exige `chamados.configuracao.administrar`.
+      responses:
+        '200':
+          description: Categoria excluída
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/politicas-sla:
+    get:
+      tags: [cadastros]
+      operationId: listarPoliticasSla
+      summary: Listar políticas de SLA
+      description: Exige `chamados.chamado.ver`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de políticas
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/PoliticaSla' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [cadastros]
+      operationId: criarPoliticaSla
+      summary: Criar política de SLA
+      description: |
+        Exige `chamados.configuracao.administrar`. Uma linha por combinação de política e prioridade — é o
+        que permite prazos diferentes por prioridade dentro da mesma política.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaPoliticaSla' }
+      responses:
+        '201':
+          description: Política criada
+          headers:
+            Location:
+              description: Endereço da política criada
+              schema: { type: string, example: /api/chamados/politicas-sla/9f1c4e2a-3b5d-4c7e-8a9b-0c1d2e3f4a5b }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PoliticaSla' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/politicas-sla/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador da política
+        schema: { type: string, format: uuid }
+    put:
+      tags: [cadastros]
+      operationId: editarPoliticaSla
+      summary: Editar política de SLA
+      description: |
+        Exige `chamados.configuracao.administrar`. Não afeta chamados já abertos: o prazo deles foi
+        congelado na abertura.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaPoliticaSla' }
+      responses:
+        '200':
+          description: Política atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PoliticaSla' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    delete:
+      tags: [cadastros]
+      operationId: excluirPoliticaSla
+      summary: Excluir política de SLA (soft delete)
+      description: Exige `chamados.configuracao.administrar`.
+      responses:
+        '200':
+          description: Política excluída
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/contratos-sla:
+    get:
+      tags: [cadastros]
+      operationId: listarVinculosContratoSla
+      summary: Listar vínculos entre contrato e política de SLA
+      description: |
+        Exige `chamados.chamado.ver`. O vínculo mora neste módulo de propósito: assim o módulo de Contratos
+        não precisa conhecer as políticas nem criar campo para elas.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de vínculos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/VinculoContratoSla' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [cadastros]
+      operationId: vincularContratoSla
+      summary: Vincular contrato a uma política
+      description: Exige `chamados.configuracao.administrar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovoVinculoContratoSla' }
+      responses:
+        '201':
+          description: Vínculo criado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/VinculoContratoSla' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '409':
+          description: Este contrato já tem política vinculada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+
+  /api/chamados/contratos-sla/{contratoId}:
+    parameters:
+      - name: contratoId
+        in: path
+        required: true
+        description: Identificador do contrato no módulo de Contratos
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [cadastros]
+      operationId: desvincularContratoSla
+      summary: Remover o vínculo do contrato
+      description: |
+        Exige `chamados.configuracao.administrar`. Chamados novos daquele contrato passam a usar a política
+        padrão.
+      responses:
+        '200':
+          description: Vínculo removido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/empresas/{id}/status-tecnico:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador da empresa no CRM
+        schema: { type: string, format: uuid }
+    get:
+      tags: [integracao]
+      operationId: verStatusTecnico
+      summary: Status técnico de uma empresa
+      description: |
+        Exige `chamados.empresa.ver_resumo`, permissão fraca concedida a todo perfil operacional. Sem ela,
+        a ficha de empresa do CRM quebraria com 403 — é o caso descrito no §9.3 do Contrato.
+        Quem chama deve aplicar timeout de 3 segundos e degradar a tela em caso de falha (§9.6).
+      responses:
+        '200':
+          description: Status técnico
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/StatusTecnico' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/empresas/status-tecnico:
+    get:
+      tags: [integracao]
+      operationId: verStatusTecnicoEmLote
+      summary: Status técnico de várias empresas
+      description: |
+        Exige `chamados.empresa.ver_resumo`. Existe porque uma listagem de empresas no CRM faria uma
+        chamada por linha sem ela (§9.4). Empresa sem chamado nenhum não aparece na resposta.
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          description: Identificadores separados por vírgula, no máximo 100
+          schema:
+            type: array
+            maxItems: 100
+            items: { type: string, format: uuid }
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: Lista de status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/StatusTecnico' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/busca:
+    get:
+      tags: [integracao]
+      operationId: buscar
+      summary: Busca global do módulo
+      description: |
+        Exige `chamados.chamado.ver`. Consumido pela casca para a caixa de busca do topo. Devolve no
+        máximo cinco resultados.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Termo buscado, no número ou no assunto do chamado
+          schema: { type: string, minLength: 2, maxLength: 120 }
+      responses:
+        '200':
+          description: Até cinco resultados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        maxItems: 5
+                        items: { $ref: '#/components/schemas/ResultadoBusca' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/chamados:
+    get:
+      tags: [relatorios]
+      operationId: relatorioChamados
+      summary: Chamados por status, categoria e prioridade no período
+      description: Exige `chamados.chamado.ver`.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioEmpresaId'
+        - $ref: '#/components/parameters/RelatorioCategoriaId'
+        - name: agruparPor
+          in: query
+          description: Dimensão do agrupamento
+          schema: { type: string, enum: [status, categoria, prioridade, empresa], default: status }
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/sla:
+    get:
+      tags: [relatorios]
+      operationId: relatorioSla
+      summary: Chamados dentro e fora do SLA
+      description: |
+        Exige `chamados.chamado.ver`. Compara `resolvidoEm` com `venceResolucaoEm`, já descontadas as
+        pausas.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioEmpresaId'
+        - $ref: '#/components/parameters/RelatorioTecnicoId'
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/tempo-resposta:
+    get:
+      tags: [relatorios]
+      operationId: relatorioTempoResposta
+      summary: Tempo médio de primeira resposta
+      description: |
+        Exige `chamados.chamado.ver`. Valor em minutos, contando de `criadoEm` até `primeiraRespostaEm`,
+        descontadas as pausas.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioEmpresaId'
+        - $ref: '#/components/parameters/RelatorioTecnicoId'
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/tempo-solucao:
+    get:
+      tags: [relatorios]
+      operationId: relatorioTempoSolucao
+      summary: Tempo médio de resolução
+      description: |
+        Exige `chamados.chamado.ver`. Valor em minutos, de `criadoEm` até `resolvidoEm`, descontadas as
+        pausas.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioEmpresaId'
+        - $ref: '#/components/parameters/RelatorioTecnicoId'
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/horas-por-cliente:
+    get:
+      tags: [relatorios]
+      operationId: relatorioHorasPorCliente
+      summary: Horas trabalhadas por empresa
+      description: |
+        Exige `chamados.chamado.ver`. Soma dos apontamentos, agrupada por empresa. Valor em minutos.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioEmpresaId'
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/chamados-por-tecnico:
+    get:
+      tags: [relatorios]
+      operationId: relatorioChamadosPorTecnico
+      summary: Volume e desempenho por técnico
+      description: |
+        Exige `chamados.chamado.ver`. `detalhe` traz resolvidos, reabertos e minutos apontados.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioTecnicoId'
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/problemas-recorrentes:
+    get:
+      tags: [relatorios]
+      operationId: relatorioProblemasRecorrentes
+      summary: Categorias com maior reincidência
+      description: |
+        Exige `chamados.chamado.ver`. Agrupa por categoria e empresa, destacando reaberturas — é o que
+        identifica problema tratado como incidente quando deveria ser tratado como causa.
+      parameters:
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioEmpresaId'
+        - name: minimoOcorrencias
+          in: query
+          description: Ignora agrupamentos com menos ocorrências que este número
+          schema: { type: integer, minimum: 2, default: 3 }
+      responses:
+        '200':
+          description: Linhas do relatório
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/health:
+    get:
+      tags: [saude]
+      operationId: saude
+      summary: Serviço de pé e conectado ao banco
+      description: Não exige token. Usado pela casca para avisar que o módulo está indisponível.
+      security: []
+      responses:
+        '200':
+          description: Disponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+              example: { success: true, data: { status: UP }, message: null, errors: [] }
+        '503':
+          description: Banco indisponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+
+components:
+  securitySchemes:
+    bearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      description: Página, começando em zero
+      schema: { type: integer, minimum: 0, default: 0 }
+    Tamanho:
+      name: tamanho
+      in: query
+      description: Itens por página, no máximo 100
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    RelatorioDe:
+      name: de
+      in: query
+      required: true
+      description: Início do período, inclusive
+      schema: { type: string, format: date, example: '2026-09-01' }
+    RelatorioAte:
+      name: ate
+      in: query
+      required: true
+      description: Fim do período, inclusive
+      schema: { type: string, format: date, example: '2026-09-30' }
+    RelatorioEmpresaId:
+      name: empresaId
+      in: query
+      description: Restringe a uma empresa do CRM
+      schema: { type: string, format: uuid }
+    RelatorioTecnicoId:
+      name: tecnicoId
+      in: query
+      description: Restringe a um técnico
+      schema: { type: string, format: uuid }
+    RelatorioCategoriaId:
+      name: categoriaId
+      in: query
+      description: Restringe a uma categoria
+      schema: { type: string, format: uuid }
+
+  responses:
+    DadosInvalidos:
+      description: Dado inválido
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: Não foi possível salvar o chamado.
+            errors:
+              - { campo: assunto, codigo: CAMPO_INVALIDO, detalhe: Informe o assunto. }
+    NaoAutenticado:
+      description: Sem token, token inválido ou expirado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    SemPermissao:
+      description: Sem a permissão exigida
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    NaoEncontrado:
+      description: Não existe ou pertence a outro tenant
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    EstadoInvalido:
+      description: A transição não é válida para o estado atual do chamado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: Não é possível fechar um chamado que ainda não foi resolvido.
+            errors:
+              - { campo: status, codigo: TRANSICAO_INVALIDA, detalhe: 'De novo só se vai para em_atendimento ou escalado.' }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [success, data, message, errors]
+      properties:
+        success: { type: boolean }
+        data: {}
+        message: { type: [string, 'null'] }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [campo, codigo, detalhe]
+            properties:
+              campo: { type: string }
+              codigo: { type: string }
+              detalhe: { type: string }
+
+    Pagina:
+      type: object
+      required: [itens, pagina, tamanho, total]
+      properties:
+        itens: { type: array, items: {} }
+        pagina: { type: integer, example: 0 }
+        tamanho: { type: integer, example: 20 }
+        total: { type: integer, example: 137 }
+
+    Chamado:
+      type: object
+      required: [id, numero, tipo, prioridade, status, assunto, criadoEm]
+      properties:
+        id: { type: string, format: uuid, example: 5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+        numero: { type: integer, description: 'Sequencial por tenant, exibido ao usuário', example: 1042 }
+        tipo:
+          type: string
+          enum: [interno, cliente]
+          description: |
+            `interno` — solicitante é usuário do sistema, sem empresa.
+            `cliente` — solicitante é contato do CRM, com empresa obrigatória.
+          example: cliente
+        solicitanteUsuarioId:
+          type: [string, 'null']
+          format: uuid
+          description: Referência a `identity.usuarios`. Preenchido apenas quando `tipo` é `interno`.
+        empresaId:
+          type: [string, 'null']
+          format: uuid
+          description: Referência a `crm.empresas`. Obrigatório quando `tipo` é `cliente`.
+        empresaNome:
+          type: [string, 'null']
+          description: Razão social copiada na abertura do chamado, conforme §9.5 do Contrato.
+          example: Centinela Soluções LTDA
+        solicitanteContatoId:
+          type: [string, 'null']
+          format: uuid
+          description: Referência a `crm.contatos`.
+        categoriaId: { type: string, format: uuid }
+        prioridade:
+          type: string
+          enum: [baixa, media, alta, critica]
+          example: alta
+        servicoId:
+          type: [string, 'null']
+          format: uuid
+          description: Serviço contratado ao qual o chamado se refere. Módulo dono ainda não definido.
+        contratoId:
+          type: [string, 'null']
+          format: uuid
+          description: Referência a `contratos.contratos`.
+        tecnicoId:
+          type: [string, 'null']
+          format: uuid
+          description: Técnico responsável. Nulo enquanto o chamado está em `novo`.
+        status:
+          type: string
+          enum: [novo, em_atendimento, aguardando_cliente, aguardando_fornecedor, escalado, resolvido, fechado, reaberto]
+          example: em_atendimento
+        assunto: { type: string, maxLength: 200, example: Servidor de arquivos inacessível }
+        descricao: { type: [string, 'null'], maxLength: 8000 }
+        solucao:
+          type: [string, 'null']
+          maxLength: 8000
+          description: Obrigatório ao resolver o chamado.
+        documentoIds:
+          type: array
+          description: Anexos, referenciados por UUID no serviço de documentos.
+          items: { type: string, format: uuid }
+        politicaSlaId: { type: [string, 'null'], format: uuid }
+        prazoPrimeiraRespostaMinutos:
+          type: [integer, 'null']
+          description: Congelado na abertura. Não muda se a política mudar depois.
+          example: 60
+        prazoResolucaoMinutos: { type: [integer, 'null'], example: 480 }
+        vencePrimeiraRespostaEm:
+          type: [string, 'null']
+          format: date-time
+          description: Empurrado a cada retomada, pelo tempo que o chamado ficou pausado.
+        venceResolucaoEm: { type: [string, 'null'], format: date-time }
+        primeiraRespostaEm:
+          type: [string, 'null']
+          format: date-time
+          description: Primeira interação pública de um técnico. Nota interna não conta.
+        resolvidoEm: { type: [string, 'null'], format: date-time }
+        fechadoEm: { type: [string, 'null'], format: date-time }
+        tempoPausadoMinutos: { type: integer, default: 0, example: 0 }
+        tempoTrabalhadoMinutos:
+          type: integer
+          description: Soma dos apontamentos do chamado.
+          default: 0
+          example: 45
+        reaberturas: { type: integer, default: 0, example: 0 }
+        criadoEm: { type: string, format: date-time, example: '2026-09-17T13:02:11Z' }
+        atualizadoEm: { type: [string, 'null'], format: date-time }
+
+    ChamadoResumo:
+      type: object
+      required: [id, numero, assunto, status, prioridade, criadoEm]
+      properties:
+        id: { type: string, format: uuid, example: 5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+        numero: { type: integer, example: 1042 }
+        assunto: { type: string, example: Servidor de arquivos inacessível }
+        status:
+          type: string
+          enum: [novo, em_atendimento, aguardando_cliente, aguardando_fornecedor, escalado, resolvido, fechado, reaberto]
+          example: em_atendimento
+        prioridade: { type: string, enum: [baixa, media, alta, critica], example: alta }
+        tecnicoId: { type: [string, 'null'], format: uuid }
+        venceResolucaoEm: { type: [string, 'null'], format: date-time }
+        criadoEm: { type: string, format: date-time, example: '2026-09-17T13:02:11Z' }
+
+    NovoChamado:
+      type: object
+      required: [tipo, categoriaId, prioridade, assunto]
+      description: |
+        `tipo` decide quais campos são obrigatórios: `interno` exige `solicitanteUsuarioId` e recusa
+        `empresaId`; `cliente` exige `empresaId`. Incoerência responde 400.
+      properties:
+        tipo: { type: string, enum: [interno, cliente], example: cliente }
+        solicitanteUsuarioId: { type: [string, 'null'], format: uuid }
+        empresaId: { type: [string, 'null'], format: uuid }
+        solicitanteContatoId: { type: [string, 'null'], format: uuid }
+        categoriaId: { type: string, format: uuid }
+        prioridade: { type: string, enum: [baixa, media, alta, critica], example: alta }
+        servicoId: { type: [string, 'null'], format: uuid }
+        contratoId: { type: [string, 'null'], format: uuid }
+        assunto: { type: string, minLength: 1, maxLength: 200, example: Servidor de arquivos inacessível }
+        descricao:
+          type: [string, 'null']
+          maxLength: 8000
+          example: Desde as 9h ninguém acessa a pasta compartilhada.
+        documentoIds: { type: array, items: { type: string, format: uuid } }
+
+    AtualizarChamado:
+      type: object
+      description: |
+        Não altera `status`. Mudança de estado acontece apenas pelas rotas de transição — se este corpo
+        aceitasse o campo, as regras de transição deixariam de valer.
+      properties:
+        categoriaId: { type: string, format: uuid }
+        prioridade: { type: string, enum: [baixa, media, alta, critica], example: alta }
+        servicoId: { type: [string, 'null'], format: uuid }
+        contratoId: { type: [string, 'null'], format: uuid }
+        assunto: { type: string, minLength: 1, maxLength: 200, example: Servidor de arquivos inacessível }
+        descricao: { type: [string, 'null'], maxLength: 8000 }
+        documentoIds: { type: array, items: { type: string, format: uuid } }
+
+    AtribuirRequest:
+      type: object
+      required: [tecnicoId]
+      properties:
+        tecnicoId:
+          type: string
+          format: uuid
+          description: Usuário do identity que passa a ser responsável.
+
+    MotivoRequest:
+      type: object
+      required: [motivo]
+      properties:
+        motivo:
+          type: string
+          minLength: 3
+          maxLength: 500
+          example: Aguardando o cliente informar o horário de acesso.
+
+    EscalarRequest:
+      type: object
+      required: [motivo, destino]
+      properties:
+        motivo:
+          type: string
+          minLength: 3
+          maxLength: 500
+          example: Depende de intervenção do fabricante.
+        destino: { type: string, minLength: 2, maxLength: 120, example: Suporte nível 2 }
+
+    ResolverRequest:
+      type: object
+      required: [solucao]
+      properties:
+        solucao:
+          type: string
+          minLength: 3
+          maxLength: 8000
+          example: Serviço de arquivos reiniciado e permissões corrigidas.
+
+    Interacao:
+      type: object
+      required: [id, visibilidade, autorUsuarioId, texto, criadoEm]
+      properties:
+        id: { type: string, format: uuid, example: 3f8e1c2b-9a7d-4e6f-8b5a-2c1d0e9f8a7b }
+        visibilidade:
+          type: string
+          enum: [interna, publica]
+          description: |
+            `interna` — só a equipe vê. `publica` — o solicitante vê, e é a que marca a primeira resposta
+            do SLA.
+          example: publica
+        autorUsuarioId: { type: string, format: uuid }
+        texto:
+          type: string
+          example: Reiniciamos o serviço e pedimos que o cliente teste novamente.
+        documentoIds: { type: array, items: { type: string, format: uuid } }
+        criadoEm: { type: string, format: date-time, example: '2026-09-17T13:40:00Z' }
+
+    NovaInteracao:
+      type: object
+      required: [visibilidade, texto]
+      properties:
+        visibilidade: { type: string, enum: [interna, publica], example: publica }
+        texto:
+          type: string
+          minLength: 1
+          maxLength: 8000
+          example: Reiniciamos o serviço e pedimos que o cliente teste novamente.
+        documentoIds: { type: array, items: { type: string, format: uuid } }
+
+    Apontamento:
+      type: object
+      required: [id, usuarioId, minutos, data, criadoEm]
+      properties:
+        id: { type: string, format: uuid, example: 8b5a2c1d-0e9f-4a7b-9c3d-1e2f3a4b5c6d }
+        usuarioId: { type: string, format: uuid }
+        minutos: { type: integer, minimum: 1, example: 45 }
+        descricao:
+          type: [string, 'null']
+          maxLength: 500
+          example: Diagnóstico remoto e correção de permissões.
+        data: { type: string, format: date, example: '2026-09-17' }
+        criadoEm: { type: string, format: date-time, example: '2026-09-17T13:45:00Z' }
+
+    NovoApontamento:
+      type: object
+      required: [minutos, data]
+      properties:
+        minutos: { type: integer, minimum: 1, maximum: 1440, example: 45 }
+        descricao:
+          type: [string, 'null']
+          maxLength: 500
+          example: Diagnóstico remoto e correção de permissões.
+        data: { type: string, format: date, example: '2026-09-17' }
+
+    Transicao:
+      type: object
+      required: [id, paraStatus, usuarioId, ocorridoEm]
+      properties:
+        id: { type: string, format: uuid, example: 1e2f3a4b-5c6d-4e7f-8a9b-0c1d2e3f4a5b }
+        deStatus:
+          type: [string, 'null']
+          enum: [novo, em_atendimento, aguardando_cliente, aguardando_fornecedor, escalado, resolvido, fechado, reaberto, null]
+          description: Nulo na abertura do chamado.
+          example: novo
+        paraStatus:
+          type: string
+          enum: [novo, em_atendimento, aguardando_cliente, aguardando_fornecedor, escalado, resolvido, fechado, reaberto]
+          example: em_atendimento
+        usuarioId: { type: string, format: uuid }
+        motivo: { type: [string, 'null'], maxLength: 500 }
+        ocorridoEm: { type: string, format: date-time, example: '2026-09-17T13:20:00Z' }
+
+    Categoria:
+      type: object
+      required: [id, nome, ativo]
+      properties:
+        id: { type: string, format: uuid, example: 7a1b2c3d-4e5f-4a7b-8c9d-0e1f2a3b4c5d }
+        nome: { type: string, example: Infraestrutura }
+        descricao: { type: [string, 'null'], maxLength: 500 }
+        ativo: { type: boolean, default: true, example: true }
+
+    NovaCategoria:
+      type: object
+      required: [nome]
+      properties:
+        nome: { type: string, minLength: 2, maxLength: 120, example: Infraestrutura }
+        descricao: { type: [string, 'null'], maxLength: 500 }
+        ativo: { type: boolean, default: true, example: true }
+
+    PoliticaSla:
+      type: object
+      required: [id, nome, prioridade, primeiraRespostaMinutos, resolucaoMinutos, regime]
+      properties:
+        id: { type: string, format: uuid, example: 9f1c4e2a-3b5d-4c7e-8a9b-0c1d2e3f4a5b }
+        nome: { type: string, example: Premium 24x7 }
+        prioridade: { type: string, enum: [baixa, media, alta, critica], example: critica }
+        primeiraRespostaMinutos: { type: integer, minimum: 1, example: 15 }
+        resolucaoMinutos: { type: integer, minimum: 1, example: 240 }
+        regime:
+          type: string
+          enum: [corrido, comercial]
+          description: |
+            `corrido` conta 24 horas por dia. `comercial` conta apenas dentro do expediente configurado.
+            Feriados não são considerados em nenhum dos dois — decisão registrada na spec.
+          example: corrido
+        expedienteDias:
+          type: array
+          description: Dias da semana do expediente, de 1 (segunda) a 7 (domingo). Usado só no regime comercial.
+          items: { type: integer, minimum: 1, maximum: 7 }
+          example: [1, 2, 3, 4, 5]
+        expedienteInicio: { type: [string, 'null'], example: '08:00' }
+        expedienteFim: { type: [string, 'null'], example: '18:00' }
+        padrao:
+          type: boolean
+          description: Política aplicada a chamado sem contrato vinculado, incluindo todo chamado interno.
+          default: false
+          example: false
+
+    NovaPoliticaSla:
+      type: object
+      required: [nome, prioridade, primeiraRespostaMinutos, resolucaoMinutos, regime]
+      properties:
+        nome: { type: string, minLength: 2, maxLength: 120, example: Premium 24x7 }
+        prioridade: { type: string, enum: [baixa, media, alta, critica], example: critica }
+        primeiraRespostaMinutos: { type: integer, minimum: 1, example: 15 }
+        resolucaoMinutos: { type: integer, minimum: 1, example: 240 }
+        regime: { type: string, enum: [corrido, comercial], example: corrido }
+        expedienteDias:
+          type: array
+          description: Dias da semana do expediente, de 1 (segunda) a 7 (domingo).
+          items: { type: integer, minimum: 1, maximum: 7 }
+          example: [1, 2, 3, 4, 5]
+        expedienteInicio: { type: [string, 'null'], example: '08:00' }
+        expedienteFim: { type: [string, 'null'], example: '18:00' }
+        padrao: { type: boolean, default: false, example: false }
+
+    VinculoContratoSla:
+      type: object
+      required: [contratoId, politicaId]
+      properties:
+        contratoId:
+          type: string
+          format: uuid
+          description: Referência a `contratos.contratos`, guardada sem chave estrangeira.
+        politicaId: { type: string, format: uuid }
+
+    NovoVinculoContratoSla:
+      type: object
+      required: [contratoId, politicaId]
+      properties:
+        contratoId: { type: string, format: uuid }
+        politicaId: { type: string, format: uuid }
+
+    StatusTecnico:
+      type: object
+      required: [empresaId, status, chamadosAbertos, foraSla, atualizadoEm]
+      properties:
+        empresaId: { type: string, format: uuid, example: be80e43d-cac3-41ff-895b-7125637878f7 }
+        status:
+          type: string
+          enum: [ok, atencao, critico]
+          description: |
+            Um dos quatro status exibidos na ficha de empresa do CRM, conforme §10.4 do Contrato.
+            Calculado a partir dos chamados críticos em aberto e do cumprimento de SLA.
+          example: atencao
+        chamadosAbertos: { type: integer, example: 3 }
+        foraSla:
+          type: integer
+          description: Chamados em aberto com prazo de resolução vencido.
+          example: 1
+        atualizadoEm: { type: string, format: date-time, example: '2026-09-17T14:00:00Z' }
+
+    ResultadoBusca:
+      type: object
+      required: [id, titulo, subtitulo, rota]
+      properties:
+        id: { type: string, format: uuid, example: 5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+        titulo: { type: string, example: '#1042 — Servidor de arquivos inacessível' }
+        subtitulo: { type: string, example: 'Em atendimento · Centinela Soluções' }
+        rota: { type: string, example: /chamados/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+
+    LinhaRelatorio:
+      type: object
+      required: [rotulo, valor]
+      description: |
+        Linha de resultado. `rotulo` é a chave do agrupamento — status, técnico, empresa, categoria —
+        e `valor` é a medida do relatório. `detalhe` traz medidas auxiliares quando o relatório tem mais
+        de uma coluna.
+      properties:
+        rotulo: { type: string, example: em_atendimento }
+        valor: { type: number, example: 17 }
+        detalhe:
+          type: [object, 'null']
+          additionalProperties: { type: number }
+          example: { dentroSla: 15, foraSla: 2 }
