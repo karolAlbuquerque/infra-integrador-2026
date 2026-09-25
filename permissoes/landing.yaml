@@ -1,0 +1,15 @@
+# Permissões do módulo Landing Pages e Formulários. Formato: modulo.recurso.acao (Contrato §5.1).
+#
+# ATENÇÃO: este arquivo cobre, por ora, só a parte de Rafael (envios e evento de lead).
+# As permissões de páginas, blocos, chatbot, embed e métricas entram aqui conforme o
+# restante do time (Camila, Giovanna, Emmylio, Pablo) definir as suas, antes do PR final
+# do módulo em infra-integrador-2026.
+modulo: landing
+permissoes:
+  - codigo: landing.acessar
+    descricao: Ver o módulo Landing Pages e Formulários no menu
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: landing.envio.ver
+    descricao: Ver a lista de envios recebidos e o detalhe de cada um (respostas, origem e consentimento)
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
