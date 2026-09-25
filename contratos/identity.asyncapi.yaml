@@ -1,7 +1,7 @@
 asyncapi: 3.0.0
 info:
-  title: Identity — mensagens recebidas pela plataforma
-  version: 0.2.0
+  title: Identity — mensagens recebidas e eventos publicados pela plataforma
+  version: 0.3.0
   description: |
     Pedidos que qualquer módulo publica na exchange `identity.entrada` para registrar na
     timeline, notificar um usuário ou enviar e-mail (Contrato de Integração §9.7).
@@ -17,7 +17,14 @@ info:
     algo em nome de outro. Em Spring AMQP: `mensagem.getMessageProperties().setUserId(usuario)`;
     em pika: `BasicProperties(user_id=usuario)`.
 
-    O identity ainda não publica eventos próprios.
+    **Eventos publicados (desde a 0.3.0)** na exchange `identity.eventos`, com o mesmo envelope,
+    `moduloOrigem = identity` e `user_id = mq_identity`: por enquanto só
+    `identity.usuario.anonimizado`. Quem guardou cópia do nome ou do e-mail de um usuário (por
+    exemplo, o nome do responsável num registro) troca a cópia por "Usuário anonimizado" ao
+    receber o evento (LGPD art. 18, IV). O `usuarioId` continua valendo como referência.
+    Publicação depois do commit e sem outbox (decisão D10): se o RabbitMQ estiver fora do ar, o
+    evento se perde e o aviso fica no log do identity. O usuário anonimizado aparece com
+    `situacao = anonimizado` em `GET /api/identity/usuarios/{id}`.
 defaultContentType: application/json
 
 servers:
@@ -48,8 +55,31 @@ channels:
           autoDelete: false
           vhost: plataforma
         bindingVersion: 0.3.0
+  eventos:
+    address: identity.eventos
+    description: Exchange topic dos fatos da plataforma; cada módulo liga a própria fila às chaves que quer.
+    messages:
+      usuarioAnonimizado:
+        $ref: '#/components/messages/UsuarioAnonimizado'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: identity.eventos
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: plataforma
+        bindingVersion: 0.3.0
 
 operations:
+  publicarUsuarioAnonimizado:
+    action: send
+    summary: Os dados pessoais de um usuário foram apagados (Requisito RF56)
+    channel:
+      $ref: '#/channels/eventos'
+    messages:
+      - $ref: '#/channels/eventos/messages/usuarioAnonimizado'
   receberRegistroDeTimeline:
     action: receive
     summary: Registrar um fato na timeline de uma empresa
@@ -109,7 +139,32 @@ components:
               tipo: { const: identity.email.enviar }
               dados: { $ref: '#/components/schemas/DadosEmail' }
 
+    UsuarioAnonimizado:
+      name: identity.usuario.anonimizado
+      title: Usuário anonimizado
+      summary: Troque as cópias do nome e do e-mail deste usuário por "Usuário anonimizado".
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: identity.usuario.anonimizado }
+              moduloOrigem: { const: identity }
+              usuarioId:
+                description: O administrador que anonimizou
+              dados: { $ref: '#/components/schemas/DadosUsuarioAnonimizado' }
+
   schemas:
+    DadosUsuarioAnonimizado:
+      type: object
+      required: [usuarioId]
+      additionalProperties: false
+      properties:
+        usuarioId:
+          type: string
+          format: uuid
+          description: Quem teve os dados pessoais apagados; o id continua existindo
+
     Envelope:
       type: object
       description: Envelope comum a toda mensagem do sistema (Contrato §9.7).
