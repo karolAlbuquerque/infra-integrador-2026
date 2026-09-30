@@ -1,0 +1,69 @@
+# Permissões do Financeiro. Formato: modulo.recurso.acao (Contrato §5.1).
+modulo: financeiro
+permissoes:
+  - codigo: financeiro.acessar
+    descricao: Ver o módulo Financeiro no menu
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO, CONTABILIDADE]
+
+  - codigo: financeiro.cobranca.ver_resumo
+    descricao: >-
+      Ver status e vencimento de cobranças, sem valor nem forma de pagamento — permissão
+      fraca (Contrato §9.3), usada pelo status financeiro exibido na ficha de empresa do
+      CRM (§10.4) e por outras telas de outros módulos
+    perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR, FINANCEIRO, CONTABILIDADE]
+
+  - codigo: financeiro.contareceber.ver
+    descricao: Ver cadastro completo de cobranças, com valor e forma de pagamento
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  - codigo: financeiro.contareceber.criar
+    descricao: Lançar cobrança avulsa
+    perfisPadrao: [ADMINISTRADOR, FINANCEIRO]
+
+  - codigo: financeiro.contareceber.editar
+    descricao: Editar cobrança em aberto ou agendada
+    perfisPadrao: [ADMINISTRADOR, FINANCEIRO]
+
+  - codigo: financeiro.contareceber.excluir
+    descricao: Cancelar cobrança (soft delete)
+    perfisPadrao: [ADMINISTRADOR, FINANCEIRO]
+
+  - codigo: financeiro.contapagar.ver
+    descricao: Ver contas a pagar
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  - codigo: financeiro.contapagar.criar
+    descricao: Lançar conta a pagar
+    perfisPadrao: [ADMINISTRADOR, FINANCEIRO]
+
+  - codigo: financeiro.contapagar.aprovar
+    descricao: Aprovar o pagamento de uma conta a pagar — distinto de quem lança (financeiro.contapagar.criar)
+    perfisPadrao: [ADMINISTRADOR, GESTOR]
+
+  - codigo: financeiro.recorrencia.ver
+    descricao: Ver regras de cobrança recorrente
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  - codigo: financeiro.recorrencia.administrar
+    descricao: Criar ou editar regra de cobrança recorrente
+    perfisPadrao: [ADMINISTRADOR, FINANCEIRO]
+
+  - codigo: financeiro.inadimplencia.ver
+    descricao: Ver o painel de inadimplência
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  - codigo: financeiro.regua.ver
+    descricao: Ver a configuração da régua de cobrança
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  - codigo: financeiro.regua.administrar
+    descricao: Configurar a régua de cobrança
+    perfisPadrao: [ADMINISTRADOR, FINANCEIRO]
+
+  - codigo: financeiro.dashboard.ver
+    descricao: Ver o dashboard financeiro e o MRR
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  - codigo: financeiro.relatorio.exportar
+    descricao: Exportar relatórios financeiros em PDF, XLSX ou CSV
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO, CONTABILIDADE]

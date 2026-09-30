@@ -1,0 +1,964 @@
+openapi: 3.1.0
+info:
+  title: Contratos e Documentos
+  version: 0.1.0
+  summary: >-
+    Contrato do módulo Contratos e Documentos (Grupo 5). Cobre o fluxo mínimo dos
+    Requisitos do módulo — cadastrar, consultar, status, documentos, editar,
+    histórico — mais os endpoints que outros módulos consomem.
+  description: |
+    Publicado antes da implementação, conforme o Contrato de Integração §14.1.
+
+    Escopo desta versão: RF-01 a RF-12 (núcleo obrigatório do documento de
+    requisitos do módulo) e as integrações de leitura que a ficha de empresa do
+    CRM e a busca global da casca precisam (§9.3, §9.4, §8.6, §10.4).
+
+    Fora de escopo por ora, e citados aqui só para rastreabilidade:
+    - assinatura eletrônica (RF-A01), automação pós-assinatura (RF-A02) e eventos
+      publicados no RabbitMQ — entram como `contratos.asyncapi.yaml` quando a
+      automação for implementada (RF-A02 é item de "Avançado" no documento de
+      requisitos, não do núcleo);
+    - armazenamento de documentos compatível com S3 (RF-A03) — o endpoint de
+      upload existe no contrato, mas a implementação de referência pode começar
+      simples e evoluir sem quebrar esta assinatura;
+    - aditivos contratuais (RF-O02) e geração automática a partir de proposta
+      aprovada (RF-O01) — dependem de quem fica com Propostas (Mapa de
+      Fronteiras, itens 18–19, hoje sem dono) e entram como mudança compatível
+      depois de decidido no grupo de gestores.
+  license:
+    name: Uso acadêmico — Projeto Integrador 2026
+    identifier: LicenseRef-Academico
+servers:
+  - url: http://localhost:8080
+    description: Pelo gateway
+  - url: http://contratos:8084
+    description: Direto, entre serviços
+tags:
+  - name: contratos
+    description: Cadastro, ciclo de vida e histórico de contratos
+  - name: documentos
+    description: Documentos associados a um contrato (RF-08)
+  - name: modelos
+    description: Modelos de contrato (RF-03)
+  - name: integracoes
+    description: Endpoints consumidos por outros módulos — ficha de empresa do CRM e busca global
+  - name: saude
+    description: Estado do serviço
+
+security:
+  - bearerJwt: []
+
+paths:
+  # ---------------------------------------------------------------------
+  # Contratos
+  # ---------------------------------------------------------------------
+  /api/contratos/contratos:
+    get:
+      tags: [contratos]
+      operationId: listarContratos
+      summary: Listar contratos do tenant
+      description: Exige `contratos.contrato.ver` (RF-04, RF-11).
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - name: q
+          in: query
+          description: Filtro textual por número ou nome do cliente (RF-11)
+          schema: { type: string, minLength: 2 }
+        - name: empresaId
+          in: query
+          description: Filtra pelo cliente
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/StatusContrato' }
+        - name: ordenar
+          in: query
+          schema:
+            type: string
+            enum: ['criadoEm,desc', 'criadoEm,asc', 'vigenciaFim,asc', 'valorMensal,desc']
+            default: 'criadoEm,desc'
+      responses:
+        '200':
+          description: Página de contratos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Contrato' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [contratos]
+      operationId: criarContrato
+      summary: Cadastrar contrato
+      description: >-
+        Exige `contratos.contrato.criar` (RF-01, RF-02). O número do contrato é
+        gerado pelo serviço; não é enviado pelo chamador. Nasce em `RASCUNHO`
+        (RF-05).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovoContrato' }
+      responses:
+        '201':
+          description: Contrato criado
+          headers:
+            Location:
+              schema: { type: string, example: /api/contratos/contratos/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Contrato' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/contratos/busca:
+    get:
+      tags: [integracoes]
+      operationId: buscarContratos
+      summary: Busca textual, para a busca global da casca
+      description: >-
+        Exige `contratos.contrato.ver_resumo`. Formato único do Contrato §8.6:
+        no máximo 5 resultados, `rota` relativa ao `urlFrontend` do módulo
+        (`/modulos/contratos/`) — por exemplo `/contratos/{id}`.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2 }
+      responses:
+        '200':
+          description: Resultados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        maxItems: 5
+                        items: { $ref: '#/components/schemas/ContratoBusca' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/contratos/contratos/resumo:
+    get:
+      tags: [integracoes]
+      operationId: resumoContratosEmLote
+      summary: Resumo de vários contratos de uma vez
+      description: Exige `contratos.contrato.ver_resumo`. Máximo 100 ids por chamada (Contrato §9.4).
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema: { type: array, items: { type: string, format: uuid }, maxItems: 100 }
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: Resumos encontrados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ContratoResumo' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/contratos/contratos/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [contratos]
+      operationId: verContrato
+      summary: Ver o cadastro completo de um contrato
+      description: Exige `contratos.contrato.ver` (RF-12). Contrato de outro tenant responde 404.
+      responses:
+        '200':
+          description: Contrato
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Contrato' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [contratos]
+      operationId: editarContrato
+      summary: Editar contrato
+      description: >-
+        Exige `contratos.contrato.editar` (RF-06). Só é aceito enquanto o
+        `status` permitir edição (`RASCUNHO` e `EM_APROVACAO`); em qualquer
+        outro estado responde 409. Cliente e origem não são editáveis depois da
+        criação.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EdicaoContrato' }
+      responses:
+        '200':
+          description: Contrato atualizado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Contrato' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/ConflitoDeEstado' }
+
+  /api/contratos/contratos/{id}/resumo:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [integracoes]
+      operationId: resumoContrato
+      summary: Número, cliente, status e valor resumido
+      description: Exige `contratos.contrato.ver_resumo` (Contrato §9.3).
+      responses:
+        '200':
+          description: Resumo
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/ContratoResumo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/contratos/contratos/{id}/aprovar:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [contratos]
+      operationId: aprovarContrato
+      summary: Mover o contrato para AGUARDANDO_ASSINATURA
+      description: >-
+        Exige `contratos.contrato.aprovar` (RF-05). Só é aceito a partir de
+        `EM_APROVACAO`; qualquer outro estado responde 409.
+      responses:
+        '200':
+          description: Contrato aprovado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Contrato' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/ConflitoDeEstado' }
+
+  /api/contratos/contratos/{id}/assinar:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [contratos]
+      operationId: assinarContrato
+      summary: Registrar a assinatura e ativar o contrato
+      description: >-
+        Exige `contratos.contrato.assinar` (RF-02, RF-05 — permissão citada como
+        exemplo no próprio Contrato de Integração, §5.1). Só é aceito a partir de
+        `AGUARDANDO_ASSINATURA`; qualquer outro estado responde 409. Publicar
+        `contratos.contrato.assinado` no RabbitMQ fica para quando o
+        `contratos.asyncapi.yaml` for aberto — RF-A02 não é núcleo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegistroAssinatura' }
+      responses:
+        '200':
+          description: Contrato assinado e ativo
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Contrato' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/ConflitoDeEstado' }
+
+  /api/contratos/contratos/{id}/historico:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [contratos]
+      operationId: historicoContrato
+      summary: Histórico de alterações do contrato
+      description: Exige `contratos.contrato.ver` (RF-10). Paginado (Contrato §8.3).
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de eventos de histórico
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/HistoricoContrato' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  # ---------------------------------------------------------------------
+  # Documentos (RF-08)
+  # ---------------------------------------------------------------------
+  /api/contratos/contratos/{id}/documentos:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [documentos]
+      operationId: listarDocumentosDoContrato
+      summary: Listar documentos associados ao contrato
+      description: Exige `contratos.documento.ver` (RF-08). Paginado (Contrato §8.3).
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de documentos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Documento' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    post:
+      tags: [documentos]
+      operationId: associarDocumento
+      summary: Associar um documento ao contrato
+      description: >-
+        Exige `contratos.documento.criar` (RF-08). Aceita o arquivo e um nome de
+        exibição opcional; o tipo de armazenamento por trás (disco, objeto
+        compatível com S3 — RF-A03) é decisão de implementação e não muda esta
+        assinatura.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [arquivo]
+              properties:
+                arquivo: { type: string, format: binary }
+                nome: { type: [string, 'null'], maxLength: 255, example: Contrato assinado.pdf }
+      responses:
+        '201':
+          description: Documento associado
+          headers:
+            Location:
+              schema: { type: string, example: /api/contratos/documentos/9f1c4e2a-0f3b-4b7e-9a6d-1e2f3a4b5c6d/download }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Documento' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/contratos/documentos/{documentoId}/download:
+    parameters:
+      - name: documentoId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [documentos]
+      operationId: baixarDocumento
+      summary: Baixar o arquivo de um documento
+      description: >-
+        Exige `contratos.documento.ver`. Única exceção ao envelope
+        `{success, data, message, errors}`, conforme o Contrato §8.2 (versão
+        0.7): a resposta de sucesso devolve o arquivo com `Content-Type` e
+        `Content-Disposition` próprios. As respostas de erro continuam no
+        envelope de sempre. O token vai só no cabeçalho `Authorization` —
+        nunca na URL.
+      responses:
+        '200':
+          description: Conteúdo binário do documento
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="Contrato assinado.pdf"' }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/contratos/documentos/{documentoId}:
+    parameters:
+      - name: documentoId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [documentos]
+      operationId: excluirDocumento
+      summary: Remover um documento do contrato
+      description: Exige `contratos.documento.excluir`.
+      responses:
+        '200':
+          description: Documento excluído
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  # ---------------------------------------------------------------------
+  # Modelos de contrato (RF-03)
+  # ---------------------------------------------------------------------
+  /api/contratos/modelos:
+    get:
+      tags: [modelos]
+      operationId: listarModelos
+      summary: Listar modelos de contrato
+      description: Exige `contratos.modelo.ver` (RF-03).
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de modelos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Modelo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [modelos]
+      operationId: criarModelo
+      summary: Criar modelo de contrato
+      description: Exige `contratos.modelo.administrar` (RF-03).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovoModelo' }
+      responses:
+        '201':
+          description: Modelo criado
+          headers:
+            Location:
+              schema: { type: string, example: /api/contratos/modelos/3b1c9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Modelo' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/contratos/modelos/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [modelos]
+      operationId: verModelo
+      summary: Ver um modelo de contrato
+      description: Exige `contratos.modelo.ver`.
+      responses:
+        '200':
+          description: Modelo
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Modelo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  # ---------------------------------------------------------------------
+  # Integração com a ficha de empresa do CRM (Contrato §10.4)
+  # ---------------------------------------------------------------------
+  /api/contratos/empresas/{empresaId}/status-contratual:
+    parameters:
+      - name: empresaId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [integracoes]
+      operationId: statusContratualDaEmpresa
+      summary: O status contratual mostrado na ficha de empresa do CRM
+      description: >-
+        Exige `contratos.contrato.ver_resumo`. Sempre responde 200, mesmo sem
+        contrato — o Contratos não enxerga o schema do CRM, e um 404 aqui seria
+        lido como erro pela ficha (mesmo critério adotado pelo Chamados para
+        `status-tecnico`). Empresa sem contrato volta `situacao: sem_contrato`.
+      responses:
+        '200':
+          description: Status contratual
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/StatusContratual' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/contratos/empresas/status-contratual:
+    get:
+      tags: [integracoes]
+      operationId: statusContratualEmLote
+      summary: Status contratual de várias empresas de uma vez
+      description: >-
+        Exige `contratos.contrato.ver_resumo`. Máximo 100 ids (Contrato §9.4).
+        Devolve um item para cada id pedido, mesmo sem contrato.
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema: { type: array, items: { type: string, format: uuid }, maxItems: 100 }
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: Status contratual de cada empresa
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/StatusContratual' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  # ---------------------------------------------------------------------
+  # Saúde (Contrato §8.5)
+  # ---------------------------------------------------------------------
+  /api/contratos/health:
+    get:
+      tags: [saude]
+      operationId: saude
+      summary: Serviço de pé e conectado ao banco
+      security: []
+      responses:
+        '200':
+          description: Disponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+              example: { success: true, data: { status: UP }, message: null, errors: [] }
+        '503':
+          description: Banco indisponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+
+components:
+  securitySchemes:
+    bearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    Tamanho:
+      name: tamanho
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  responses:
+    DadosInvalidos:
+      description: Dado inválido
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: Não foi possível salvar o contrato.
+            errors:
+              - { campo: valorMensal, codigo: PRECISAO_EXCEDIDA, detalhe: 'Valor monetário com mais de 2 casas decimais (Contrato §8.7).' }
+    NaoAutenticado:
+      description: Sem token, token inválido ou expirado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    SemPermissao:
+      description: Sem a permissão exigida
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    NaoEncontrado:
+      description: Não existe ou pertence a outro tenant
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    ConflitoDeEstado:
+      description: A transição pedida não é válida a partir do estado atual do contrato
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: O contrato precisa estar em EM_APROVACAO para ser aprovado.
+            errors:
+              - { campo: status, codigo: TRANSICAO_INVALIDA, detalhe: 'Estado atual: RASCUNHO.' }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [success, data, message, errors]
+      properties:
+        success: { type: boolean }
+        data: {}
+        message: { type: [string, 'null'] }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [campo, codigo, detalhe]
+            properties:
+              campo: { type: string }
+              codigo: { type: string }
+              detalhe: { type: string }
+
+    Pagina:
+      type: object
+      required: [itens, pagina, tamanho, total]
+      properties:
+        itens: { type: array, items: {} }
+        pagina: { type: integer, example: 0 }
+        tamanho: { type: integer, example: 20 }
+        total: { type: integer, example: 1 }
+
+    StatusContrato:
+      type: string
+      description: Os nove estados do RF-05
+      enum:
+        - RASCUNHO
+        - EM_APROVACAO
+        - AGUARDANDO_ASSINATURA
+        - ATIVO
+        - A_VENCER
+        - RENOVADO
+        - SUSPENSO
+        - CANCELADO
+        - FINALIZADO
+
+    ServicoContratado:
+      type: object
+      required: [descricao, quantidade, valorUnitario, valorTotal]
+      properties:
+        itemCatalogoId:
+          type: [string, 'null']
+          format: uuid
+          description: >-
+            Referência opcional a um item do catálogo publicado pelo módulo
+            Produtos (Grupo 1, dono do catálogo — PR #10). No Mapa de
+            Fronteiras, quem ficou sem dono foram licenças e serviços
+            contratados, não o catálogo: mesma solução adotada pelo Chamados
+            para `servicoId`, fica nulo até haver dono para esses itens.
+        descricao: { type: string, minLength: 1, maxLength: 255, example: Suporte técnico mensal }
+        quantidade:
+          type: number
+          minimum: 0.0001
+          multipleOf: 0.0001
+          example: 1
+          description: >-
+            Até 4 casas decimais — o catálogo do módulo Produtos vende GB, TB
+            e hora fracionados.
+        valorUnitario: { $ref: '#/components/schemas/Money' }
+        valorTotal: { $ref: '#/components/schemas/Money' }
+
+    Money:
+      type: number
+      multipleOf: 0.01
+      minimum: 0
+      example: 1890.00
+      description: >-
+        Valor em reais, sempre com 2 casas decimais, `BigDecimal`/`numeric` no
+        banco (Contrato §8.7). Valor com mais casas responde 400 com
+        `PRECISAO_EXCEDIDA` — nunca arredondado em silêncio.
+
+    Percentual:
+      type: number
+      multipleOf: 0.01
+      minimum: 0
+      maximum: 100
+      example: 12.5
+      description: >-
+        Percentual em pontos percentuais — `12.5` representa 12,5% (Contrato
+        §8.7), nunca fração (`0.125`).
+
+    NovoContrato:
+      type: object
+      required: [empresaId, servicosContratados, valorMensal, mrr, dataInicio, renovacao, avisoPrevioDias, responsavelId, origem, origemModuloId]
+      properties:
+        empresaId: { type: string, format: uuid, description: 'Referência ao cliente, dono no CRM (Contrato §10)' }
+        modeloId: { type: [string, 'null'], format: uuid, description: Modelo usado como ponto de partida (RF-03) }
+        servicosContratados:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/ServicoContratado' }
+        valorMensal: { $ref: '#/components/schemas/Money' }
+        mrr: { $ref: '#/components/schemas/Money' }
+        dataInicio: { type: string, format: date, example: '2026-10-01' }
+        vigenciaMeses: { type: [integer, 'null'], minimum: 1, example: 12 }
+        renovacao: { type: string, enum: [automatica, manual, sem_renovacao] }
+        reajusteAnualPercentual: { $ref: '#/components/schemas/Percentual' }
+        indiceReajuste: { type: [string, 'null'], enum: [IPCA, IGPM, INPC, nenhum], default: nenhum }
+        avisoPrevioDias: { type: integer, minimum: 0, example: 30 }
+        responsavelId: { type: string, format: uuid, description: Usuário responsável pelo contrato }
+        origem:
+          type: string
+          example: crm
+          description: Módulo ou canal que originou o contrato (mesmo padrão do §10.3)
+        origemModuloId:
+          type: string
+          example: oportunidade-abc123
+          description: Identificador na origem, para rastreio (§10.3)
+
+    EdicaoContrato:
+      description: >-
+        Igual a NovoContrato, sem `empresaId`, `origem` e `origemModuloId` —
+        cliente e origem não mudam depois da criação (mesma correção aplicada
+        ao contrato do CRM, issue #3).
+      type: object
+      required: [servicosContratados, valorMensal, mrr, dataInicio, renovacao, avisoPrevioDias, responsavelId]
+      properties:
+        modeloId: { type: [string, 'null'], format: uuid }
+        servicosContratados:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/ServicoContratado' }
+        valorMensal: { $ref: '#/components/schemas/Money' }
+        mrr: { $ref: '#/components/schemas/Money' }
+        dataInicio: { type: string, format: date }
+        vigenciaMeses: { type: [integer, 'null'], minimum: 1 }
+        renovacao: { type: string, enum: [automatica, manual, sem_renovacao] }
+        reajusteAnualPercentual: { $ref: '#/components/schemas/Percentual' }
+        indiceReajuste: { type: [string, 'null'], enum: [IPCA, IGPM, INPC, nenhum] }
+        avisoPrevioDias: { type: integer, minimum: 0 }
+        responsavelId: { type: string, format: uuid }
+
+    Assinatura:
+      type: object
+      properties:
+        assinadoEm: { type: string, format: date-time }
+        assinadoPor: { type: string, format: uuid }
+
+    RegistroAssinatura:
+      type: object
+      required: [assinadoPor]
+      properties:
+        assinadoPor: { type: string, format: uuid, description: Usuário ou contato que assinou }
+        documentoAssinadoId: { type: [string, 'null'], format: uuid, description: 'Documento com a via assinada, se já anexado (RF-08)' }
+
+    Contrato:
+      allOf:
+        - $ref: '#/components/schemas/NovoContrato'
+        - type: object
+          required: [id, numero, status, criadoEm, atualizadoEm]
+          properties:
+            id: { type: string, format: uuid }
+            numero: { type: string, example: 'CT-2026-000123' }
+            empresaNome:
+              type: string
+              description: Razão social copiada no momento do cadastro (Contrato §9.5) — não acompanha renomeação posterior
+              example: Centinela Soluções Digitais
+            status: { $ref: '#/components/schemas/StatusContrato' }
+            assinatura: { oneOf: [{ $ref: '#/components/schemas/Assinatura' }, { type: 'null' }] }
+            criadoEm: { type: string, format: date-time }
+            atualizadoEm: { type: string, format: date-time }
+
+    ContratoResumo:
+      type: object
+      required: [id, numero, empresaNome, status, valorMensal]
+      properties:
+        id: { type: string, format: uuid }
+        numero: { type: string, example: 'CT-2026-000123' }
+        empresaNome: { type: string }
+        status: { $ref: '#/components/schemas/StatusContrato' }
+        valorMensal: { $ref: '#/components/schemas/Money' }
+        vigenciaFimPrevista: { type: [string, 'null'], format: date }
+
+    ContratoBusca:
+      type: object
+      description: Formato único da busca global, Contrato §8.6
+      required: [id, titulo, subtitulo, rota]
+      properties:
+        id: { type: string, format: uuid }
+        titulo: { type: string, example: 'CT-2026-000123 — Centinela Soluções Digitais' }
+        subtitulo: { type: string, example: 'Ativo · R$ 1.890,00/mês' }
+        rota:
+          type: string
+          description: Relativa ao urlFrontend do módulo (/modulos/contratos/)
+          example: /contratos/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d
+
+    StatusContratual:
+      type: object
+      description: O quarto status da ficha de empresa (Contrato §10.4), dono é o Contratos
+      required: [empresaId, situacao]
+      properties:
+        empresaId: { type: string, format: uuid }
+        situacao:
+          type: string
+          enum: [sem_contrato, ok, atencao, critico]
+          description: >-
+            sem_contrato: nenhum contrato ativo · ok: contrato ativo, longe do
+            vencimento · atencao: dentro da janela de aviso prévio ou aguardando
+            renovação · critico: suspenso ou vencido sem renovação
+        contratoId: { type: [string, 'null'], format: uuid }
+        numero: { type: [string, 'null'], example: 'CT-2026-000123' }
+        diasParaVencer: { type: [integer, 'null'], example: 25 }
+
+    HistoricoContrato:
+      type: object
+      required: [id, contratoId, campo, usuarioId, ocorridoEm]
+      properties:
+        id: { type: string, format: uuid }
+        contratoId: { type: string, format: uuid }
+        campo: { type: string, example: status }
+        valorAnterior: { type: [string, 'null'], example: EM_APROVACAO }
+        valorNovo: { type: [string, 'null'], example: AGUARDANDO_ASSINATURA }
+        usuarioId: { type: string, format: uuid }
+        ocorridoEm: { type: string, format: date-time }
+
+    NovoModelo:
+      type: object
+      required: [nome, conteudo]
+      properties:
+        nome: { type: string, minLength: 1, maxLength: 255, example: 'Prestação de serviços — padrão' }
+        descricao: { type: [string, 'null'], maxLength: 500 }
+        conteudo:
+          type: string
+          description: Texto do modelo, com variáveis entre chaves (ex. {{cliente.razaoSocial}})
+
+    Modelo:
+      allOf:
+        - $ref: '#/components/schemas/NovoModelo'
+        - type: object
+          required: [id, criadoEm]
+          properties:
+            id: { type: string, format: uuid }
+            criadoEm: { type: string, format: date-time }
+
+    Documento:
+      type: object
+      required: [id, contratoId, nome, tipoArquivo, tamanhoBytes, urlDownload, criadoEm, criadoPor]
+      properties:
+        id: { type: string, format: uuid }
+        contratoId: { type: string, format: uuid }
+        nome: { type: string, example: Contrato assinado.pdf }
+        tipoArquivo: { type: string, example: application/pdf }
+        tamanhoBytes: { type: integer, example: 245678 }
+        urlDownload: { type: string, example: /api/contratos/documentos/9f1c4e2a-0f3b-4b7e-9a6d-1e2f3a4b5c6d/download }
+        criadoEm: { type: string, format: date-time }
+        criadoPor: { type: string, format: uuid }

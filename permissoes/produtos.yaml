@@ -1,0 +1,50 @@
+# Perfis iniciais propostos para revisão do Grupo 2; sem hierarquia implícita.
+modulo: produtos
+permissoes:
+- codigo: produtos.acessar
+  descricao: Ver Produtos e Serviços no menu
+  perfisPadrao:
+  - ADMINISTRADOR
+  - GESTOR
+  - VENDEDOR
+- codigo: produtos.item.ver_resumo
+  descricao: Ler resumo, preço e limites comerciais; sem custo, margem ou comissão
+  perfisPadrao:
+  - ADMINISTRADOR
+  - GESTOR
+  - VENDEDOR
+  - PRE_VENDAS
+  - FINANCEIRO
+  - TECNICO
+  - CONTABILIDADE
+  - MARKETING
+  servicos:
+  - crm
+  - contratos
+  - financeiro
+- codigo: produtos.item.ver
+  descricao: Ler catálogo e listas auxiliares, sem precificação restrita
+  perfisPadrao:
+  - ADMINISTRADOR
+  - GESTOR
+  - VENDEDOR
+- codigo: produtos.item.criar
+  descricao: Criar itens e listas auxiliares, sem gravar precificação
+  perfisPadrao:
+  - ADMINISTRADOR
+  - GESTOR
+- codigo: produtos.item.editar
+  descricao: Editar e inativar itens e listas auxiliares
+  perfisPadrao:
+  - ADMINISTRADOR
+  - GESTOR
+- codigo: produtos.precificacao.ver
+  descricao: Ver custo, markup, margem, impostos, comissão e histórico
+  perfisPadrao:
+  - ADMINISTRADOR
+  - GESTOR
+- codigo: produtos.precificacao.editar
+  descricao: Gravar precificação e limites comerciais manualmente
+  perfisPadrao:
+  - ADMINISTRADOR
+  - GESTOR

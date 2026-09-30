@@ -35,6 +35,19 @@ O e-mail segue `{perfil}@empresa-a.dev` ou `{perfil}@empresa-b.dev`:
 Cada usuário recebe as permissões marcadas com o seu perfil em `perfisPadrao`, nas listas de
 [permissoes/](../permissoes). Permissão nova no arquivo passa a valer na próxima subida do identity.
 
+## Equipes
+
+Uma equipe "Comercial" em cada tenant, para testar o recorte "gestor vê a equipe" (Contrato §5.4).
+O id da equipe chega no claim `equipes` do token de cada membro.
+
+| Tenant | id da equipe | Membros |
+|---|---|---|
+| Empresa A | `a0000000-0000-4000-8000-0000000000e1` | gestor (líder), vendedor, pré-vendas |
+| Empresa B | `b0000000-0000-4000-8000-0000000000e1` | gestor (líder), vendedor, pré-vendas |
+
+Para listar os membros: `GET /api/identity/equipes/{id}/membros`, com a permissão
+`identity.equipe.ver_resumo`.
+
 ## Obter um token
 
 ```bash
@@ -45,6 +58,13 @@ curl -s -X POST http://localhost:8080/api/identity/auth/login \
 
 O `accessToken` da resposta vai no cabeçalho `Authorization: Bearer ...` das chamadas ao seu
 módulo. Ele dura 15 minutos.
+
+**Verificação em duas etapas.** Fora do desenvolvimento, todo usuário cadastra um aplicativo
+autenticador e o login devolve um `desafio` em vez do token (contrato `identity.yaml` 0.4.0). No
+perfil `dev`, com `IDENTITY_EXIGIR_SEGUNDO_FATOR` vazio, a obrigação fica desligada e o POST acima
+continua entregando o token direto. Se você ativar o segundo fator de um usuário de teste pela
+tela Minha conta, ele passa a pedir o código também no dev — para voltar, um administrador redefine
+em Administração → Usuários, ou recrie o banco com `docker compose down -v`.
 
 ## Token de serviço
 

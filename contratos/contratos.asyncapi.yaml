@@ -1,0 +1,88 @@
+asyncapi: 3.0.0
+info:
+  title: Contratos e Documentos — eventos publicados
+  version: 0.1.0
+  description: |
+    Eventos que o módulo Contratos e Documentos publica na exchange `contratos.eventos`
+    (Contrato de Integração §9.7). Publicado antes da implementação, conforme §14.1.
+
+    Nesta versão: apenas `contratos.contrato.assinado`, disparado por
+    `POST /api/contratos/contratos/{id}/assinar` depois que o contrato passa para
+    `ATIVO` (RF-02, RF-05) — a mesma permissão citada como exemplo no próprio
+    Contrato de Integração, §5.1. Consumido pelo Financeiro (PR #14) para a régua de
+    cobrança recorrente.
+defaultContentType: application/json
+
+servers:
+  desenvolvimento:
+    host: localhost:5672
+    protocol: amqp
+    protocolVersion: 0.9.1
+    description: RabbitMQ do infra-integrador-2026, vhost `plataforma`
+
+channels:
+  eventos:
+    address: contratos.eventos
+    messages:
+      contratoAssinado:
+        $ref: '#/components/messages/ContratoAssinado'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: contratos.eventos
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: plataforma
+        bindingVersion: 0.3.0
+
+operations:
+  publicarContratoAssinado:
+    action: send
+    summary: Um contrato foi assinado e passou para ATIVO
+    channel:
+      $ref: '#/channels/eventos'
+    messages:
+      - $ref: '#/channels/eventos/messages/contratoAssinado'
+
+components:
+  messages:
+    ContratoAssinado:
+      name: contratos.contrato.assinado
+      title: Contrato assinado
+      summary: Publicado depois do commit do registro da assinatura (RF-02, RF-05).
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: contratos.contrato.assinado }
+              dados:
+                type: object
+                required: [contratoId, empresaId, valorMensal]
+                properties:
+                  contratoId: { type: string, format: uuid }
+                  empresaId: { type: string, format: uuid }
+                  valorMensal:
+                    type: number
+                    multipleOf: 0.01
+                    minimum: 0
+                    example: 1890.00
+                    description: Mesma regra de 2 casas decimais do Money em contratos.yaml (OpenAPI)
+
+  schemas:
+    Envelope:
+      type: object
+      required: [id, tipo, versao, tenantId, moduloOrigem, ocorridoEm, dados]
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { type: string }
+        versao: { type: integer, minimum: 1 }
+        tenantId: { type: string, format: uuid }
+        moduloOrigem: { type: string }
+        ocorridoEm: { type: string, format: date-time }
+        usuarioId: { type: [string, 'null'], format: uuid }
+        correlacaoId: { type: [string, 'null'] }
+        dados: { type: object }
+

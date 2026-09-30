@@ -1,6 +1,7 @@
 package br.com.plataforma.exemplo.eventos;
 
 import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.core.MessagePostProcessor;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
@@ -8,6 +9,8 @@ import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.amqp.RabbitTemplateCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -59,6 +62,23 @@ public class TopologiaMensageria {
     Binding ligacaoContratoAssinado() {
         return new Binding(FILA_CONTRATO_ASSINADO, Binding.DestinationType.QUEUE,
                 "contratos.eventos", "contratos.contrato.assinado", null);
+    }
+
+    /**
+     * Toda mensagem sai com a propriedade user_id = usuário da conexão, mq_exemplo (Contrato §9.7).
+     * O RabbitMQ confere que é mesmo quem está conectado, e o identity recusa, direto para a .dlq,
+     * pedido em identity.entrada sem ela ou com moduloOrigem de outro módulo.
+     */
+    @Bean
+    RabbitTemplateCustomizer remetenteEmTodaMensagem(@Value("${spring.rabbitmq.username}") String usuario) {
+        return template -> template.addBeforePublishPostProcessors(comRemetente(usuario));
+    }
+
+    static MessagePostProcessor comRemetente(String usuario) {
+        return mensagem -> {
+            mensagem.getMessageProperties().setUserId(usuario);
+            return mensagem;
+        };
     }
 
     /** JSON nos dois sentidos. O tipo vem do parâmetro do listener, não de cabeçalho Java de quem publicou. */

@@ -1,0 +1,1516 @@
+openapi: 3.1.0
+info:
+  title: Produtos e Serviços
+  version: 0.3.0
+  summary: Catálogo e precificação manual do módulo produtos.
+  description: 'Contrato da Fase 1: catálogo, resumos, busca e precificação manual no mesmo módulo.
+
+    JWT validado localmente. Tenant do claim tenant_id; com sub svc:, exigir X-Tenant-Id e auditar clientId (Contrato
+    §9.2). Header ignorado em token de usuário. Outro tenant retorna 404.
+
+    Cada permissão é verificada no back-end, sem hierarquia implícita. Acesso ao menu não é pré-requisito da API.
+
+    Dinheiro BRL como número JSON com até 2 casas; percentual/fator como número com até 4. Percentuais em pontos
+    percentuais: 12.5 significa 12,5%. Usar BigDecimal/numeric, sem arredondamento silencioso. Excesso de casas:
+    400/PRECISAO_EXCEDIDA (Contrato §8.7).
+
+    Produtos fornece limites manuais. CRM/Propostas alerta abaixo do mínimo, aplica quantidade mínima e aprova desconto
+    fora da política; Contratos copia os valores pactuados na assinatura. Inativos não entram em vendas novas. Nenhum
+    item é excluído.
+
+    Periodicidades e fluxo comercial devem ser revisados pelos consumidores. Implantação e mensalidade são dois
+    itens. Não há cálculo automático nem publicação de eventos neste contrato.'
+  license:
+    name: Uso acadêmico — Projeto Integrador 2026
+    identifier: LicenseRef-Academico
+servers:
+- url: http://localhost:8080
+  description: Pelo gateway
+- url: http://produtos:8083
+  description: Direto, entre serviços; consumidor configura PRODUTOS_BASE_URL e timeout de 3 segundos.
+tags:
+- name: itens
+  description: Cadastro e leitura compartilhada
+- name: precificacao
+  description: Valores manuais restritos
+- name: auxiliares
+  description: Fabricantes e distribuidores locais
+- name: saude
+  description: Disponibilidade
+security:
+- bearerJwt: []
+paths:
+  /api/produtos/itens:
+    get:
+      tags:
+      - itens
+      operationId: listarProdutos
+      summary: Listar itens do tenant
+      description: Exige `produtos.item.ver`. q pesquisa SKU e nome; sem filtro ativo, inclui ativos e inativos.
+        Sem dados sensíveis.
+      x-permissao: produtos.item.ver
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - $ref: '#/components/parameters/Pagina'
+      - name: tamanho
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: ordenar
+        in: query
+        description: Desempate por id.
+        schema:
+          type: string
+          enum:
+          - nome,asc
+          - nome,desc
+          default: nome,asc
+      - name: q
+        in: query
+        schema:
+          type: string
+      - name: categoria
+        in: query
+        schema:
+          $ref: '#/components/schemas/Categoria'
+      - name: fabricanteId
+        in: query
+        schema: &id001
+          type: string
+          format: uuid
+      - name: distribuidorId
+        in: query
+        schema: *id001
+      - name: ativo
+        in: query
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/PaginaItens'
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+    post:
+      tags:
+      - itens
+      operationId: criarProduto
+      summary: Criar item sem precificação
+      description: Exige `produtos.item.criar`. Preço e demais valores começam null. Unicidade de SKU garantida
+        sob concorrência.
+      x-permissao: produtos.item.criar
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      responses:
+        '201':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/Item'
+          headers:
+            Location:
+              description: URI do recurso criado
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+        '409':
+          $ref: '#/components/responses/SkuDuplicado'
+        '422':
+          $ref: '#/components/responses/RegraViolada'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NovoItem'
+  /api/produtos/itens/{id}:
+    get:
+      tags:
+      - itens
+      operationId: verProduto
+      summary: Consultar cadastro do item
+      description: 'Exige `produtos.item.ver`. '
+      x-permissao: produtos.item.ver
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - &id002
+        $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/Item'
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+    patch:
+      tags:
+      - itens
+      operationId: editarProduto
+      summary: Editar ou inativar item
+      description: Exige `produtos.item.editar`. Sem exclusão física ou lógica. Campos de precificação são rejeitados.
+      x-permissao: produtos.item.editar
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - *id002
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/Item'
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+        '409':
+          $ref: '#/components/responses/SkuDuplicado'
+        '422':
+          $ref: '#/components/responses/RegraViolada'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditarItem'
+  /api/produtos/itens/{id}/resumo:
+    get:
+      tags:
+      - itens
+      operationId: resumirProduto
+      summary: Consultar resumo fraco
+      description: Exige `produtos.item.ver_resumo`. Retorna inclusive inativos. Não exige produtos.acessar ou item.ver.
+      x-permissao: produtos.item.ver_resumo
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - *id002
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/ResumoItem'
+              example:
+                success: true
+                data: &id003
+                  id: 5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d
+                  sku: BKP-001
+                  nome: Licença de backup
+                  unidade: LICENCA
+                  periodicidade: MENSAL
+                  quantidadeMinima: '1'
+                  ativo: true
+                  casasDecimaisQuantidade: 0
+                  moeda: BRL
+                  precoVenda: 150.00
+                  precoMinimo: 120.00
+                  descontoMaximo: 10.0000
+                message: null
+                errors: []
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+  /api/produtos/itens/resumo:
+    get:
+      tags:
+      - itens
+      operationId: resumirProdutosEmLote
+      summary: Consultar até 100 itens por ID
+      description: Exige `produtos.item.ver_resumo`. Sem paginação adicional. Ordem solicitada; inexistentes e alheios
+        em idsNaoEncontrados, sem distinção. IDs repetidos, inválidos, vazios ou mais de 100 retornam 400. Resolver
+        rota literal antes de /itens/{id}.
+      x-permissao: produtos.item.ver_resumo
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - name: ids
+        in: query
+        required: true
+        style: form
+        explode: false
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: *id001
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/LoteResumos'
+              example:
+                success: true
+                data:
+                  itens:
+                  - *id003
+                  idsNaoEncontrados: []
+                message: null
+                errors: []
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+  /api/produtos/busca:
+    get:
+      tags:
+      - itens
+      operationId: buscarProdutos
+      summary: Busca global por SKU e nome
+      description: Exige `produtos.item.ver_resumo`. Somente ativos; até cinco resultados, sem paginação (Contrato
+        §8.6). Rota relativa ao módulo, sem o prefixo /produtos. Tela de destino oferece resumo com permissão fraca,
+        sem exigir menu. Sem valores sensíveis. Ordem por nome, com desempate por id.
+      x-permissao: produtos.item.ver_resumo
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - name: q
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 2
+          pattern: \S
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      type: array
+                      maxItems: 5
+                      items:
+                        $ref: '#/components/schemas/ResultadoBusca'
+              example:
+                success: true
+                data:
+                - id: 5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d
+                  titulo: Licença de backup
+                  subtitulo: BKP-001 · LICENCA · MENSAL
+                  rota: /itens/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d
+                message: null
+                errors: []
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+  /api/produtos/itens/{id}/precificacao:
+    get:
+      tags:
+      - precificacao
+      operationId: verPrecificacaoProduto
+      summary: Consultar valores manuais
+      description: 'Exige `produtos.precificacao.ver`. '
+      x-permissao: produtos.precificacao.ver
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - *id002
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/Precificacao'
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+    put:
+      tags:
+      - precificacao
+      operationId: gravarPrecificacaoProduto
+      summary: Gravar valores sem recálculo
+      description: Exige `produtos.precificacao.editar`. Substituição completa. Uma linha de histórico por gravação,
+        atomicamente. Não muda outros campos por fórmulas. Autor é sub do JWT; escrita restrita a usuário humano.
+      x-permissao: produtos.precificacao.editar
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - *id002
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/Precificacao'
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+        '422':
+          $ref: '#/components/responses/RegraViolada'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Precificacao'
+  /api/produtos/itens/{id}/precificacao/historico:
+    get:
+      tags:
+      - precificacao
+      operationId: listarHistoricoProduto
+      summary: Consultar snapshots da precificação
+      description: 'Exige `produtos.precificacao.ver`. '
+      x-permissao: produtos.precificacao.ver
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - *id002
+      - $ref: '#/components/parameters/Pagina'
+      - name: tamanho
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: ordenar
+        in: query
+        description: Desempate por id.
+        schema:
+          type: string
+          enum:
+          - gravadoEm,asc
+          - gravadoEm,desc
+          default: gravadoEm,desc
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/PaginaHistorico'
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+  /api/produtos/fabricantes:
+    get:
+      tags:
+      - auxiliares
+      operationId: listarFabricantes
+      summary: Listar fabricantes
+      description: 'Exige `produtos.item.ver`. '
+      x-permissao: produtos.item.ver
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - $ref: '#/components/parameters/Pagina'
+      - name: tamanho
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: ordenar
+        in: query
+        description: Desempate por id.
+        schema:
+          type: string
+          enum:
+          - nome,asc
+          - nome,desc
+          default: nome,asc
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/PaginaAuxiliares'
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+    post:
+      tags:
+      - auxiliares
+      operationId: criarFabricante
+      summary: Cadastrar fabricante
+      description: 'Exige `produtos.item.criar`. '
+      x-permissao: produtos.item.criar
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      responses:
+        '201':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/Auxiliar'
+          headers:
+            Location:
+              description: URI do recurso criado
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NovoAuxiliar'
+  /api/produtos/fabricantes/{id}:
+    get:
+      tags:
+      - auxiliares
+      operationId: verFabricante
+      summary: Consultar fabricante
+      description: 'Exige `produtos.item.ver`. '
+      x-permissao: produtos.item.ver
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - *id002
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/Auxiliar'
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+    patch:
+      tags:
+      - auxiliares
+      operationId: editarFabricante
+      summary: Editar ou inativar fabricante
+      description: Exige `produtos.item.editar`. Preserva vínculos anteriores; sem DELETE.
+      x-permissao: produtos.item.editar
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - *id002
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/Auxiliar'
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditarAuxiliar'
+  /api/produtos/distribuidores:
+    get:
+      tags:
+      - auxiliares
+      operationId: listarDistribuidors
+      summary: Listar distribuidores
+      description: 'Exige `produtos.item.ver`. '
+      x-permissao: produtos.item.ver
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - $ref: '#/components/parameters/Pagina'
+      - name: tamanho
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: ordenar
+        in: query
+        description: Desempate por id.
+        schema:
+          type: string
+          enum:
+          - nome,asc
+          - nome,desc
+          default: nome,asc
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/PaginaAuxiliares'
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+    post:
+      tags:
+      - auxiliares
+      operationId: criarDistribuidor
+      summary: Cadastrar distribuidor
+      description: 'Exige `produtos.item.criar`. '
+      x-permissao: produtos.item.criar
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      responses:
+        '201':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/Auxiliar'
+          headers:
+            Location:
+              description: URI do recurso criado
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NovoAuxiliar'
+  /api/produtos/distribuidores/{id}:
+    get:
+      tags:
+      - auxiliares
+      operationId: verDistribuidor
+      summary: Consultar distribuidor
+      description: 'Exige `produtos.item.ver`. '
+      x-permissao: produtos.item.ver
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - *id002
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/Auxiliar'
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+    patch:
+      tags:
+      - auxiliares
+      operationId: editarDistribuidor
+      summary: Editar ou inativar distribuidor
+      description: Exige `produtos.item.editar`. Preserva vínculos anteriores; sem DELETE.
+      x-permissao: produtos.item.editar
+      parameters:
+      - $ref: '#/components/parameters/TenantServico'
+      - *id002
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/Auxiliar'
+        '400':
+          $ref: '#/components/responses/DadosInvalidos'
+        '401':
+          $ref: '#/components/responses/NaoAutenticado'
+        '403':
+          $ref: '#/components/responses/SemPermissao'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditarAuxiliar'
+  /api/produtos/health:
+    get:
+      tags:
+      - saude
+      operationId: saudeProdutos
+      summary: Verificar serviço e conexão ao banco
+      security: []
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: true
+                    data:
+                      $ref: '#/components/schemas/Saude'
+              example:
+                success: true
+                data:
+                  status: UP
+                message: null
+                errors: []
+        '503':
+          description: Banco indisponível
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Envelope'
+                - properties:
+                    success:
+                      const: false
+                    data:
+                      $ref: '#/components/schemas/Saude'
+              example:
+                success: false
+                data:
+                  status: DOWN
+                message: Serviço indisponível.
+                errors: []
+components:
+  securitySchemes:
+    bearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: *id001
+    TenantServico:
+      name: X-Tenant-Id
+      in: header
+      required: false
+      description: Obrigatório apenas com sub svc:. Ignorado com token de usuário. Serviço sem tenant válido recebe
+        400. Auditar origem.
+      schema: *id001
+  responses:
+    DadosInvalidos:
+      description: Dados inválidos; inclui PRECISAO_EXCEDIDA e TIPO_VALOR_INCONSISTENTE.
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/Envelope'
+            - properties:
+                success:
+                  const: false
+                data:
+                  type: 'null'
+          example:
+            success: false
+            data: null
+            message: Dados inválidos; inclui PRECISAO_EXCEDIDA e TIPO_VALOR_INCONSISTENTE.
+            errors:
+            - campo: requisicao
+              codigo: CAMPO_INVALIDO
+              detalhe: Dados inválidos; inclui PRECISAO_EXCEDIDA e TIPO_VALOR_INCONSISTENTE.
+    NaoAutenticado:
+      description: Token ausente, inválido ou expirado.
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/Envelope'
+            - properties:
+                success:
+                  const: false
+                data:
+                  type: 'null'
+          example:
+            success: false
+            data: null
+            message: Token ausente, inválido ou expirado.
+            errors:
+            - campo: requisicao
+              codigo: NAO_AUTENTICADO
+              detalhe: Token ausente, inválido ou expirado.
+    SemPermissao:
+      description: Permissão ausente.
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/Envelope'
+            - properties:
+                success:
+                  const: false
+                data:
+                  type: 'null'
+          example:
+            success: false
+            data: null
+            message: Permissão ausente.
+            errors:
+            - campo: requisicao
+              codigo: SEM_PERMISSAO
+              detalhe: Permissão ausente.
+    NaoEncontrado:
+      description: Não existe ou pertence a outro tenant.
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/Envelope'
+            - properties:
+                success:
+                  const: false
+                data:
+                  type: 'null'
+          example:
+            success: false
+            data: null
+            message: Não existe ou pertence a outro tenant.
+            errors:
+            - campo: requisicao
+              codigo: NAO_ENCONTRADO
+              detalhe: Não existe ou pertence a outro tenant.
+    SkuDuplicado:
+      description: SKU já cadastrado no tenant, inclusive inativo.
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/Envelope'
+            - properties:
+                success:
+                  const: false
+                data:
+                  type: 'null'
+          example:
+            success: false
+            data: null
+            message: SKU já cadastrado no tenant, inclusive inativo.
+            errors:
+            - campo: sku
+              codigo: SKU_DUPLICADO
+              detalhe: SKU já cadastrado no tenant, inclusive inativo.
+    RegraViolada:
+      description: Quantidade mínima não positiva, desconto máximo fora de 0 a 100 ou referência local inativa.
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/Envelope'
+            - properties:
+                success:
+                  const: false
+                data:
+                  type: 'null'
+          example:
+            success: false
+            data: null
+            message: Quantidade mínima não positiva, desconto máximo fora de 0 a 100 ou referência local inativa.
+            errors:
+            - campo: requisicao
+              codigo: REGRA_VIOLADA
+              detalhe: Quantidade mínima não positiva, desconto máximo fora de 0 a 100 ou referência local inativa.
+  schemas:
+    Envelope:
+      type: object
+      required:
+      - success
+      - data
+      - message
+      - errors
+      properties:
+        success:
+          type: boolean
+        data: {}
+        message:
+          type:
+          - string
+          - 'null'
+        errors:
+          type: array
+          items:
+            type: object
+            required:
+            - campo
+            - codigo
+            - detalhe
+            properties:
+              campo:
+                type: string
+              codigo:
+                type: string
+              detalhe:
+                type: string
+    Dinheiro:
+      type:
+      - number
+      - 'null'
+      multipleOf: 0.01
+      minimum: -9999999999999.99
+      maximum: 9999999999999.99
+      description: Número JSON em reais, com até 2 casas decimais. null indica valor não cadastrado; zero é um valor
+        informado. Excesso de casas retorna 400/PRECISAO_EXCEDIDA, sem arredondamento.
+    NumeroQuatroCasas:
+      type:
+      - number
+      - 'null'
+      multipleOf: 0.0001
+      minimum: -99999999999.9999
+      maximum: 99999999999.9999
+      description: Número JSON com até 4 casas decimais. Percentuais em pontos percentuais (12.5 representa 12,5%);
+        fatores são multiplicadores. Excesso de casas retorna 400/PRECISAO_EXCEDIDA, sem arredondamento.
+    Unidade:
+      type: string
+      enum:
+      - USUARIO
+      - LICENCA
+      - ENDPOINT
+      - SERVIDOR
+      - VM
+      - GB
+      - TB
+      - CAIXA_POSTAL
+      - DOMINIO
+      - HORA
+      - UNIDADE
+    Periodicidade:
+      type: string
+      enum:
+      - UNICA
+      - MENSAL
+      - TRIMESTRAL
+      - SEMESTRAL
+      - ANUAL
+    Categoria:
+      type: string
+      enum:
+      - SOFTWARE
+      - LICENÇA
+      - SERVIÇO
+      - PROJETO
+      - CONSULTORIA
+      - BACKUP
+      - ARMAZENAMENTO
+      - CLOUD
+      - SEGURANÇA
+      - ANTIVÍRUS
+      - EDR
+      - XDR
+      - MICROSOFT 365
+      - GOOGLE WORKSPACE
+      - SUPORTE
+      - OUTROS
+    NovoItem:
+      type: object
+      additionalProperties: false
+      required:
+      - sku
+      - nome
+      - categoria
+      - unidade
+      - periodicidade
+      - quantidadeMinima
+      properties: &id005
+        sku: &id006
+          type: string
+          minLength: 1
+          description: Digitado; trim e unicidade case-insensitive por tenant, incluindo inativos.
+        nome: &id007
+          type: string
+          minLength: 1
+        fabricanteId: &id004
+          type:
+          - string
+          - 'null'
+          format: uuid
+        distribuidorId: *id004
+        categoria: &id012
+          $ref: '#/components/schemas/Categoria'
+        descricao: &id013
+          type:
+          - string
+          - 'null'
+        unidade: &id008
+          $ref: '#/components/schemas/Unidade'
+        periodicidade: &id009
+          $ref: '#/components/schemas/Periodicidade'
+        quantidadeMinima: &id010
+          type: string
+          pattern: ^-?\d{1,11}(?:\.\d{1,4})?$
+        ativo: &id011
+          type: boolean
+          default: true
+      description: Quantidade mínima maior que zero; inteiros exceto GB, TB e HORA (4 casas). Referências auxiliares
+        do mesmo tenant e ativas. Sem valores de precificação.
+    EditarItem:
+      type: object
+      additionalProperties: false
+      required: []
+      properties: *id005
+      minProperties: 1
+      description: Omitido permanece intacto; null somente nos campos opcionais. Mudança de unidade valida o mínimo.
+        Inativar preserva resumos. Não recebe precificação.
+    ResumoItem:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - sku
+      - nome
+      - unidade
+      - periodicidade
+      - quantidadeMinima
+      - ativo
+      - casasDecimaisQuantidade
+      - moeda
+      - precoVenda
+      - precoMinimo
+      - descontoMaximo
+      properties:
+        id: *id001
+        sku: *id006
+        nome: *id007
+        unidade: *id008
+        periodicidade: *id009
+        quantidadeMinima: *id010
+        ativo: *id011
+        casasDecimaisQuantidade: &id014
+          type: integer
+          enum:
+          - 0
+          - 4
+        moeda: &id015
+          const: BRL
+          type: string
+        precoVenda: &id016
+          $ref: '#/components/schemas/Dinheiro'
+        precoMinimo: &id017
+          $ref: '#/components/schemas/Dinheiro'
+        descontoMaximo: &id018
+          $ref: '#/components/schemas/NumeroQuatroCasas'
+      description: Projeção fraca, sem custo, markup, margem, impostos ou comissão. Limite nulo é política não cadastrada,
+        nunca aprovação automática. Preço nulo não equivale a zero. Desconto máximo de 0 a 100.
+    Item:
+      type: object
+      additionalProperties: false
+      required:
+      - sku
+      - nome
+      - fabricanteId
+      - distribuidorId
+      - categoria
+      - descricao
+      - unidade
+      - periodicidade
+      - quantidadeMinima
+      - ativo
+      - id
+      - casasDecimaisQuantidade
+      - moeda
+      - precoVenda
+      - precoMinimo
+      - descontoMaximo
+      - criadoEm
+      - atualizadoEm
+      properties:
+        sku: *id006
+        nome: *id007
+        fabricanteId: *id004
+        distribuidorId: *id004
+        categoria: *id012
+        descricao: *id013
+        unidade: *id008
+        periodicidade: *id009
+        quantidadeMinima: *id010
+        ativo: *id011
+        id: *id001
+        casasDecimaisQuantidade: *id014
+        moeda: *id015
+        precoVenda: *id016
+        precoMinimo: *id017
+        descontoMaximo: *id018
+        criadoEm:
+          type: string
+          format: date-time
+        atualizadoEm:
+          type: string
+          format: date-time
+    LoteResumos:
+      type: object
+      additionalProperties: false
+      required:
+      - itens
+      - idsNaoEncontrados
+      properties:
+        itens:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ResumoItem'
+        idsNaoEncontrados:
+          type: array
+          maxItems: 100
+          items: *id001
+    ResultadoBusca:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - titulo
+      - subtitulo
+      - rota
+      properties:
+        id: *id001
+        titulo:
+          type: string
+        subtitulo:
+          type: string
+        rota:
+          type: string
+          pattern: ^/itens/[0-9a-fA-F-]+$
+          description: Relativa ao módulo; a casca acrescenta /app/produtos antes desta rota.
+    Precificacao:
+      type: object
+      additionalProperties: false
+      required:
+      - moeda
+      - precoVenda
+      - precoMinimo
+      - descontoMaximo
+      - custo
+      - markupValor
+      - markupTipo
+      - margem
+      - impostosValor
+      - impostosTipo
+      - comissaoValor
+      - comissaoTipo
+      properties:
+        moeda:
+          type: string
+          const: BRL
+        precoVenda:
+          $ref: '#/components/schemas/Dinheiro'
+        precoMinimo:
+          $ref: '#/components/schemas/Dinheiro'
+        descontoMaximo:
+          $ref: '#/components/schemas/NumeroQuatroCasas'
+        custo:
+          $ref: '#/components/schemas/Dinheiro'
+        markupValor:
+          $ref: '#/components/schemas/NumeroQuatroCasas'
+        markupTipo:
+          type:
+          - string
+          - 'null'
+          enum:
+          - PERCENTUAL
+          - FATOR
+          - null
+        margem:
+          $ref: '#/components/schemas/NumeroQuatroCasas'
+        impostosValor:
+          $ref: '#/components/schemas/NumeroQuatroCasas'
+        impostosTipo:
+          type:
+          - string
+          - 'null'
+          enum:
+          - PERCENTUAL
+          - VALOR
+          - null
+        comissaoValor:
+          $ref: '#/components/schemas/NumeroQuatroCasas'
+        comissaoTipo:
+          type:
+          - string
+          - 'null'
+          enum:
+          - PERCENTUAL
+          - VALOR
+          - null
+      description: PUT completo, chaves obrigatórias, valores nulos permitidos. Sem cálculo ou coerência matemática
+        entre campos. Desconto máximo entre 0 e 100 (422 fora da faixa). Cada par tipo/valor é ambos null ou ambos
+        preenchidos (400/TIPO_VALOR_INCONSISTENTE). Tipos VALOR usam 2 casas, PERCENTUAL e FATOR usam 4.
+      allOf:
+      - oneOf:
+        - properties:
+            markupValor:
+              type: 'null'
+            markupTipo:
+              type: 'null'
+        - properties:
+            markupValor:
+              type: number
+            markupTipo:
+              type: string
+      - oneOf:
+        - properties:
+            impostosValor:
+              type: 'null'
+            impostosTipo:
+              type: 'null'
+        - properties:
+            impostosValor:
+              type: number
+            impostosTipo:
+              type: string
+      - if:
+          properties:
+            impostosTipo:
+              const: VALOR
+        then:
+          properties:
+            impostosValor:
+              $ref: '#/components/schemas/Dinheiro'
+      - oneOf:
+        - properties:
+            comissaoValor:
+              type: 'null'
+            comissaoTipo:
+              type: 'null'
+        - properties:
+            comissaoValor:
+              type: number
+            comissaoTipo:
+              type: string
+      - if:
+          properties:
+            comissaoTipo:
+              const: VALOR
+        then:
+          properties:
+            comissaoValor:
+              $ref: '#/components/schemas/Dinheiro'
+    HistoricoPrecificacao:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - itemId
+      - tenantId
+      - autorId
+      - gravadoEm
+      - unidade
+      - periodicidade
+      - valores
+      properties:
+        id: *id001
+        itemId: *id001
+        tenantId: *id001
+        autorId: *id001
+        gravadoEm:
+          type: string
+          format: date-time
+        unidade:
+          $ref: '#/components/schemas/Unidade'
+        periodicidade:
+          $ref: '#/components/schemas/Periodicidade'
+        valores:
+          $ref: '#/components/schemas/Precificacao'
+      description: Uma linha imutável por gravação bem-sucedida, inclusive sem alteração de valores; estado e histórico
+        na mesma transação.
+    Auxiliar:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - nome
+      - ativo
+      properties:
+        id: *id001
+        nome:
+          type: string
+          minLength: 1
+        ativo:
+          type: boolean
+    NovoAuxiliar:
+      type: object
+      additionalProperties: false
+      required:
+      - nome
+      properties:
+        nome:
+          type: string
+          minLength: 1
+        ativo:
+          type: boolean
+          default: true
+    EditarAuxiliar:
+      type: object
+      additionalProperties: false
+      required: []
+      properties:
+        nome:
+          type: string
+          minLength: 1
+        ativo:
+          type: boolean
+      minProperties: 1
+    Saude:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - UP
+          - DOWN
+    PaginaItens:
+      type: object
+      additionalProperties: false
+      required:
+      - itens
+      - pagina
+      - tamanho
+      - total
+      properties:
+        itens:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Item'
+        pagina:
+          type: integer
+          minimum: 0
+        tamanho:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+    PaginaHistorico:
+      type: object
+      additionalProperties: false
+      required:
+      - itens
+      - pagina
+      - tamanho
+      - total
+      properties:
+        itens:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/HistoricoPrecificacao'
+        pagina:
+          type: integer
+          minimum: 0
+        tamanho:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+    PaginaAuxiliares:
+      type: object
+      additionalProperties: false
+      required:
+      - itens
+      - pagina
+      - tamanho
+      - total
+      properties:
+        itens:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Auxiliar'
+        pagina:
+          type: integer
+          minimum: 0
+        tamanho:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0

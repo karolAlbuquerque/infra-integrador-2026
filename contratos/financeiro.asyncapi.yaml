@@ -1,0 +1,173 @@
+asyncapi: 3.0.0
+info:
+  title: Financeiro — eventos publicados
+  version: 0.2.0
+  description: |
+    Eventos que o módulo Financeiro publica na exchange `financeiro.eventos`, do tipo
+    topic, com o tipo do evento como chave de roteamento (Contrato de Integração §9.7).
+    Publica com o usuário `mq_financeiro` e sempre depois do commit da transação que
+    produziu o fato. Quem consome cria a própria fila e a liga a esta exchange.
+
+    Origem de cada evento:
+    - `financeiro.cobranca.criada`: lançamento avulso (`POST /api/financeiro/cobrancas`)
+      ou geração pela recorrência (job ou `POST .../recorrencias/{id}/gerar-cobranca`).
+    - `financeiro.pagamento.confirmado` e `financeiro.pagamento.falhou`: webhook do
+      provedor (`POST /public/financeiro/webhooks/pagamento`). Estorno sai como `falhou`.
+    - `financeiro.pagamento.atrasado`: job da régua de cobrança, quando uma cobrança
+      vence sem pagamento.
+defaultContentType: application/json
+
+servers:
+  desenvolvimento:
+    host: localhost:5672
+    protocol: amqp
+    protocolVersion: 0.9.1
+    description: RabbitMQ do infra-integrador-2026, vhost `plataforma`
+
+channels:
+  eventos:
+    address: financeiro.eventos
+    messages:
+      cobrancaCriada:
+        $ref: '#/components/messages/CobrancaCriada'
+      pagamentoConfirmado:
+        $ref: '#/components/messages/PagamentoConfirmado'
+      pagamentoAtrasado:
+        $ref: '#/components/messages/PagamentoAtrasado'
+      pagamentoFalhou:
+        $ref: '#/components/messages/PagamentoFalhou'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: financeiro.eventos
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: plataforma
+        bindingVersion: 0.3.0
+
+operations:
+  publicarCobrancaCriada:
+    action: send
+    summary: Uma cobrança foi lançada (avulsa ou por recorrência)
+    channel:
+      $ref: '#/channels/eventos'
+    messages:
+      - $ref: '#/channels/eventos/messages/cobrancaCriada'
+  publicarPagamentoConfirmado:
+    action: send
+    summary: O provedor confirmou o pagamento de uma cobrança
+    channel:
+      $ref: '#/channels/eventos'
+    messages:
+      - $ref: '#/channels/eventos/messages/pagamentoConfirmado'
+  publicarPagamentoAtrasado:
+    action: send
+    summary: Uma cobrança venceu sem pagamento
+    channel:
+      $ref: '#/channels/eventos'
+    messages:
+      - $ref: '#/channels/eventos/messages/pagamentoAtrasado'
+  publicarPagamentoFalhou:
+    action: send
+    summary: O provedor rejeitou ou estornou um pagamento
+    channel:
+      $ref: '#/channels/eventos'
+    messages:
+      - $ref: '#/channels/eventos/messages/pagamentoFalhou'
+
+components:
+  messages:
+    CobrancaCriada:
+      name: financeiro.cobranca.criada
+      title: Cobrança criada
+      summary: Publicado depois do commit do lançamento da cobrança.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: financeiro.cobranca.criada }
+              dados:
+                type: object
+                required: [cobrancaId, clienteId, valor, vencimento]
+                properties:
+                  cobrancaId: { type: string, format: uuid }
+                  clienteId: { type: string, format: uuid, description: UUID da empresa no CRM }
+                  contratoId: { type: [string, 'null'], format: uuid }
+                  valor: { type: number, multipleOf: 0.01, minimum: 0, example: 1490.00 }
+                  vencimento: { type: string, format: date, example: '2026-10-10' }
+
+    PagamentoConfirmado:
+      name: financeiro.pagamento.confirmado
+      title: Pagamento confirmado
+      summary: Publicado depois do commit do processamento do webhook de pagamento.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: financeiro.pagamento.confirmado }
+              dados:
+                type: object
+                required: [cobrancaId, clienteId, valorPago]
+                properties:
+                  cobrancaId: { type: string, format: uuid }
+                  clienteId: { type: string, format: uuid }
+                  valorPago: { type: number, multipleOf: 0.01, minimum: 0, example: 1490.00 }
+
+    PagamentoAtrasado:
+      name: financeiro.pagamento.atrasado
+      title: Pagamento atrasado
+      summary: Publicado pelo job da régua de cobrança quando uma cobrança vence sem pagamento.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: financeiro.pagamento.atrasado }
+              dados:
+                type: object
+                required: [cobrancaId, clienteId, vencimento]
+                properties:
+                  cobrancaId: { type: string, format: uuid }
+                  clienteId: { type: string, format: uuid }
+                  vencimento: { type: string, format: date }
+
+    PagamentoFalhou:
+      name: financeiro.pagamento.falhou
+      title: Pagamento falhou
+      summary: Publicado quando o provedor rejeita ou estorna um pagamento.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: financeiro.pagamento.falhou }
+              dados:
+                type: object
+                required: [cobrancaId, clienteId, motivo]
+                properties:
+                  cobrancaId: { type: string, format: uuid }
+                  clienteId: { type: string, format: uuid }
+                  motivo: { type: string, enum: [REJEITADO, ESTORNADO] }
+                  valorPago:
+                    type: [number, 'null']
+                    multipleOf: 0.01
+                    description: Valor estornado, quando motivo = ESTORNADO
+
+  schemas:
+    Envelope:
+      type: object
+      required: [id, tipo, versao, tenantId, moduloOrigem, ocorridoEm, dados]
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { type: string }
+        versao: { type: integer, minimum: 1 }
+        tenantId: { type: string, format: uuid }
+        moduloOrigem: { type: string }
+        ocorridoEm: { type: string, format: date-time }
+        usuarioId: { type: [string, 'null'], format: uuid }
+        correlacaoId: { type: [string, 'null'] }
+        dados: { type: object }

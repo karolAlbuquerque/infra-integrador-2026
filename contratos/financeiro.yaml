@@ -1,0 +1,1136 @@
+openapi: 3.1.0
+info:
+  title: Financeiro — Módulo
+  version: 0.3.0
+  summary: Contas a receber, cobrança recorrente, pagamentos, régua, inadimplência e MRR.
+  description: |
+    API do módulo Financeiro (código `financeiro`, Grupo 8) do Projeto Integrador 2026.
+
+    Segue o Contrato de Integração dos Módulos v0.1 (Grupo 2): rotas sob `/api/financeiro`,
+    envelope em toda resposta, JWT RS256 validado via JWKS, `tenant_id` sempre do claim do
+    token, listagem paginada (máx. 100), e registro de outro tenant respondendo 404 (nunca 403).
+
+    Escopo desta versão: recorte de Fase 2 do Prompt Mestre (§102) — Contas a Receber,
+    Contas a Pagar (estrutura mínima), Recorrência, Pagamentos, Webhooks, Régua de Cobrança,
+    Inadimplência e MRR/Dashboard. Contabilidade, Comissões e Conciliação ficam fora até
+    definição de dono (ver Levantamento de Requisitos Financeiro v0.2, seção 2).
+    v0.7 do Contrato de Integração: valores monetários sempre com 2 casas decimais, sem
+    arredondamento silencioso; percentuais em pontos (12.5 = 12,5%); busca global no
+    formato padrão (id, titulo, subtitulo, rota, máx. 5 resultados); download de arquivo
+    é a única exceção ao envelope `{ success, data, message, errors }`.
+
+    Integrações de leitura para outros módulos (tag `integracoes`): status financeiro da
+    empresa exibido na ficha do CRM (§10.4), com a permissão fraca
+    `financeiro.cobranca.ver_resumo` (§9.3) e versão em lote (§9.4).
+
+    Superfície pública: o webhook do provedor de pagamento fica sob `/public/financeiro/**`,
+    único prefixo dispensado de token no gateway (§12.6).
+  license:
+    name: Uso acadêmico — Projeto Integrador 2026
+    identifier: LicenseRef-Academico
+servers:
+  - url: http://localhost:8080
+    description: Pelo gateway
+  - url: http://financeiro:8085
+    description: Direto, entre serviços
+tags:
+  - name: saude
+    description: Estado do serviço
+  - name: busca
+    description: Busca global (Contrato v0.7) — formato padrão id/titulo/subtitulo/rota
+  - name: integracoes
+    description: Endpoints consumidos por outros módulos — ficha de empresa do CRM
+  - name: contas-a-receber
+    description: Cobranças emitidas a clientes
+  - name: contas-a-pagar
+    description: Despesas e obrigações com fornecedores (estrutura mínima desta fase)
+  - name: recorrencia
+    description: Regras de cobrança recorrente derivadas de contrato + serviços + consumo
+  - name: pagamentos
+    description: Solicitação de pagamento via adaptador de provedor (simulado nesta fase)
+  - name: webhooks
+    description: Callbacks de provedores de pagamento — rota pública, sem token (§12.6)
+  - name: regua
+    description: Configuração da régua de cobrança
+  - name: inadimplencia
+    description: Painel de clientes em atraso, com aging por faixas
+  - name: mrr-dashboard
+    description: MRR decomposto e indicadores da Home do Financeiro
+
+security:
+  - bearerJwt: []
+
+paths:
+  /api/financeiro/health:
+    get:
+      tags: [saude]
+      operationId: saude
+      summary: Serviço de pé e conectado ao banco
+      security: []
+      responses:
+        '200':
+          description: Disponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+              example: { success: true, data: { status: UP }, message: null, errors: [] }
+        '503':
+          description: Banco indisponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+
+  /api/financeiro/busca:
+    get:
+      tags: [busca]
+      operationId: buscarFinanceiro
+      summary: Busca global — cobranças e contas a pagar por texto
+      description: >
+        Exige `financeiro.acessar`. Cada tipo de resultado só aparece para quem pode
+        ler aquele recurso: cobranças com `financeiro.contareceber.ver`, contas a pagar
+        com `financeiro.contapagar.ver` — o subtítulo mostra valor, por isso não basta
+        a permissão fraca. Formato padrão da busca global (Contrato v0.7, §8.6): no
+        máximo 5 resultados, cada um com id, titulo, subtitulo e rota (relativa ao
+        módulo).
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2 }
+      responses:
+        '200':
+          description: Resultados da busca (até 5)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        maxItems: 5
+                        items: { $ref: '#/components/schemas/ResultadoBusca' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/financeiro/relatorios/cobrancas/exportar:
+    get:
+      tags: [contas-a-receber]
+      operationId: exportarRelatorioCobrancas
+      summary: Exportar contas a receber em PDF, XLSX ou CSV
+      description: >
+        Exige `financeiro.relatorio.exportar`. Única exceção ao envelope padrão
+        (Contrato v0.7) — devolve o arquivo diretamente, sem { success, data,
+        message, errors }.
+      parameters:
+        - name: formato
+          in: query
+          required: true
+          schema: { type: string, enum: [pdf, xlsx, csv] }
+        - name: vencimentoInicio
+          in: query
+          schema: { type: string, format: date }
+        - name: vencimentoFim
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Arquivo gerado (sem envelope — exceção do Contrato v0.7)
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+            text/csv:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/financeiro/cobrancas:
+    get:
+      tags: [contas-a-receber]
+      operationId: listarCobrancas
+      summary: Listar cobranças do tenant
+      description: Exige `financeiro.contareceber.ver`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - name: clienteId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/StatusCobranca' }
+        - name: vencimentoInicio
+          in: query
+          schema: { type: string, format: date }
+        - name: vencimentoFim
+          in: query
+          schema: { type: string, format: date }
+        - name: ordenar
+          in: query
+          schema:
+            type: string
+            enum: ['vencimento,asc', 'vencimento,desc', 'criadoEm,desc']
+            default: 'vencimento,asc'
+      responses:
+        '200':
+          description: Página de cobranças
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Cobranca' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [contas-a-receber]
+      operationId: criarCobranca
+      summary: Lançar uma cobrança avulsa
+      description: >
+        Exige `financeiro.contareceber.criar`. Publica `financeiro.cobranca.criada`
+        depois do commit (consumido pela régua de cobrança e pelo MRR).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CobrancaEntrada' }
+      responses:
+        '201':
+          description: Cobrança criada
+          headers:
+            Location:
+              schema: { type: string, example: /api/financeiro/cobrancas/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Cobranca' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/financeiro/cobrancas/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [contas-a-receber]
+      operationId: verCobranca
+      summary: Ver uma cobrança
+      description: Exige `financeiro.contareceber.ver`. Cobrança de outro tenant responde 404.
+      responses:
+        '200':
+          description: Cobrança
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Cobranca' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [contas-a-receber]
+      operationId: editarCobranca
+      summary: Editar uma cobrança
+      description: >
+        Exige `financeiro.contareceber.editar`. Só permitido enquanto status = ABERTO
+        ou AGENDADO; após pagamento parcial, apenas o saldo restante é editável.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CobrancaEntrada' }
+      responses:
+        '200':
+          description: Cobrança atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Cobranca' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409':
+          description: Conflito — ex. edição de valor total após pagamento parcial
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+    delete:
+      tags: [contas-a-receber]
+      operationId: excluirCobranca
+      summary: Cancelar uma cobrança (soft delete)
+      description: Exige `financeiro.contareceber.excluir`.
+      responses:
+        '200':
+          description: Cobrança cancelada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/financeiro/cobrancas/{id}/pagamento/pix:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [pagamentos]
+      operationId: gerarPixCobranca
+      summary: Solicitar cobrança via PIX
+      description: >
+        Exige `financeiro.contareceber.editar`. Adaptador de provedor simulado nesta fase
+        (arquitetura desacoplada, §28 do Prompt Mestre).
+      responses:
+        '201':
+          description: PIX gerado
+          headers:
+            Location: { $ref: '#/components/headers/LocationPagamento' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PagamentoSolicitado' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/financeiro/cobrancas/{id}/pagamento/boleto:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [pagamentos]
+      operationId: gerarBoletoCobranca
+      summary: Gerar boleto
+      description: Exige `financeiro.contareceber.editar`. Adaptador de provedor simulado nesta fase.
+      responses:
+        '201':
+          description: Boleto gerado
+          headers:
+            Location: { $ref: '#/components/headers/LocationPagamento' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PagamentoSolicitado' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/financeiro/cobrancas/{id}/pagamento/cartao:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [pagamentos]
+      operationId: gerarCartaoCobranca
+      summary: Gerar link de pagamento por cartão
+      description: >
+        Exige `financeiro.contareceber.editar`.
+        Adaptador de provedor simulado nesta fase. Pendência aberta: o Prompt Mestre (§27)
+        prevê também CARTÃO RECORRENTE — cobrança recorrente por cartão salvo, ainda não
+        coberta por este endpoint (ver seção 2 do Levantamento de Requisitos).
+      responses:
+        '201':
+          description: Link de pagamento gerado
+          headers:
+            Location: { $ref: '#/components/headers/LocationPagamento' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PagamentoSolicitado' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/financeiro/pagamentos/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [pagamentos]
+      operationId: verPagamento
+      summary: Consultar uma solicitação de pagamento
+      description: >
+        Exige `financeiro.contareceber.ver`. Destino do `Location` devolvido pelos
+        `POST .../pagamento/*` (§8.4); serve também para a tela acompanhar se o PIX
+        ou o boleto já foi pago. Pagamento de outro tenant responde 404.
+      responses:
+        '200':
+          description: Solicitação de pagamento
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/PagamentoSolicitado' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /public/financeiro/webhooks/pagamento:
+    post:
+      tags: [webhooks]
+      operationId: receberWebhookPagamento
+      summary: Callback de confirmação de pagamento do provedor
+      security: []
+      description: >
+        Rota pública (§12.6): fica sob `/public/**`, o único prefixo que o gateway
+        dispensa de token, e é chamada pelo provedor externo. A assinatura do payload é
+        validada antes de qualquer processamento. O tenant nunca vem do payload: é
+        resolvido pela cobrança (`cobrancaId`) depois da assinatura validada. Sujeita a
+        rate limit por IP, como toda rota pública. Idempotente por `eventoId`: reenvio do
+        mesmo evento retorna 200 sem criar pagamento duplicado. Publica
+        `financeiro.pagamento.confirmado` ou `financeiro.pagamento.falhou` (este também
+        para estorno) depois do commit; `financeiro.pagamento.atrasado` não sai daqui, e
+        sim do job da régua de cobrança. A resposta não devolve dado de negócio.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookPagamentoEntrada' }
+      responses:
+        '200':
+          description: Evento aceito (processado ou ignorado por já ter sido processado)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: object
+                        required: [recebido]
+                        properties:
+                          recebido: { type: boolean, example: true }
+              example: { success: true, data: { recebido: true }, message: null, errors: [] }
+        '400':
+          description: Assinatura inválida ou payload malformado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+
+  /api/financeiro/contas-pagar:
+    get:
+      tags: [contas-a-pagar]
+      operationId: listarContasPagar
+      summary: Listar contas a pagar do tenant
+      description: Exige `financeiro.contapagar.ver`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - name: aprovado
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Página de contas a pagar
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/ContaPagar' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [contas-a-pagar]
+      operationId: criarContaPagar
+      summary: Lançar uma conta a pagar
+      description: Exige `financeiro.contapagar.criar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContaPagarEntrada' }
+      responses:
+        '201':
+          description: Conta a pagar criada
+          headers:
+            Location:
+              schema: { type: string, example: /api/financeiro/contas-pagar/7d1e2f3a-4b5c-4d6e-8f9a-0b1c2d3e4f5a }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/ContaPagar' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/financeiro/contas-pagar/{id}/aprovar:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [contas-a-pagar]
+      operationId: aprovarContaPagar
+      summary: Aprovar o pagamento de uma conta a pagar
+      description: >
+        Exige `financeiro.contapagar.aprovar` — distinta de quem lança a despesa
+        (`financeiro.contapagar.criar`), para separar quem lança de quem aprova.
+      responses:
+        '200':
+          description: Conta aprovada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/ContaPagar' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/financeiro/recorrencias:
+    get:
+      tags: [recorrencia]
+      operationId: listarRecorrencias
+      summary: Listar regras de cobrança recorrente
+      description: Exige `financeiro.recorrencia.ver`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - name: clienteId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: ativa
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Página de regras
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/RegraRecorrencia' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [recorrencia]
+      operationId: criarRecorrencia
+      summary: Criar uma regra de cobrança recorrente
+      description: Exige `financeiro.recorrencia.administrar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegraRecorrenciaEntrada' }
+      responses:
+        '201':
+          description: Regra criada
+          headers:
+            Location:
+              schema: { type: string, example: /api/financeiro/recorrencias/2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/RegraRecorrencia' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/financeiro/recorrencias/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [recorrencia]
+      operationId: atualizarRecorrencia
+      summary: Atualizar uma regra de cobrança recorrente
+      description: >
+        Exige `financeiro.recorrencia.administrar`. Altera apenas a próxima
+        geração — cobranças já emitidas não são recalculadas.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegraRecorrenciaEntrada' }
+      responses:
+        '200':
+          description: Regra atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/RegraRecorrencia' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/financeiro/recorrencias/{id}/gerar-cobranca:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [recorrencia]
+      operationId: gerarCobrancaRecorrencia
+      summary: Disparar manualmente a geração da cobrança do ciclo
+      description: >
+        Exige `financeiro.recorrencia.administrar`.
+        Uso de teste/depuração do job periódico. Valor recalculado a partir dos itens
+        vigentes da regra; consumo acima da franquia soma excedente. Publica
+        `financeiro.cobranca.criada` depois do commit.
+      responses:
+        '201':
+          description: Cobrança gerada para o ciclo atual
+          headers:
+            Location:
+              schema: { type: string, example: /api/financeiro/cobrancas/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Cobranca' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409':
+          description: Já existe cobrança gerada para este ciclo (evita duplicidade)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+
+  /api/financeiro/regua:
+    get:
+      tags: [regua]
+      operationId: verRegua
+      summary: Consultar a configuração atual da régua de cobrança
+      description: Exige `financeiro.regua.ver`.
+      responses:
+        '200':
+          description: Configuração da régua
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/ReguaCobranca' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    put:
+      tags: [regua]
+      operationId: atualizarRegua
+      summary: Substituir a configuração completa de etapas da régua
+      description: Exige `financeiro.regua.administrar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReguaCobranca' }
+      responses:
+        '200':
+          description: Régua atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/ReguaCobranca' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/financeiro/inadimplencia:
+    get:
+      tags: [inadimplencia]
+      operationId: verInadimplencia
+      summary: Painel de inadimplência com aging por faixas
+      description: Exige `financeiro.inadimplencia.ver`.
+      parameters:
+        - name: faixa
+          in: query
+          schema: { $ref: '#/components/schemas/FaixaAging' }
+      responses:
+        '200':
+          description: Painel de inadimplência
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/InadimplenciaResponse' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/financeiro/mrr:
+    get:
+      tags: [mrr-dashboard]
+      operationId: verMrr
+      summary: MRR decomposto do período
+      description: >
+        Exige `financeiro.dashboard.ver`. Novo, Expansion, Contraction, Churned e Net New
+        (§75 do Prompt Mestre).
+      parameters:
+        - name: periodo
+          in: query
+          required: true
+          schema: { type: string, example: '2026-09' }
+          description: Formato AAAA-MM
+      responses:
+        '200':
+          description: Decomposição do MRR
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/MrrResponse' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/financeiro/dashboard:
+    get:
+      tags: [mrr-dashboard]
+      operationId: verDashboard
+      summary: Indicadores da Home do Financeiro
+      description: Exige `financeiro.dashboard.ver`.
+      responses:
+        '200':
+          description: Indicadores agregados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/DashboardFinanceiro' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/financeiro/empresas/{empresaId}/status-financeiro:
+    parameters:
+      - name: empresaId
+        in: path
+        required: true
+        description: UUID da empresa no CRM (o mesmo `clienteId` das cobranças)
+        schema: { type: string, format: uuid }
+    get:
+      tags: [integracoes]
+      operationId: statusFinanceiroDaEmpresa
+      summary: O status financeiro mostrado na ficha de empresa do CRM
+      description: >
+        Exige `financeiro.cobranca.ver_resumo` (Contrato §9.3, §10.4). Sempre responde
+        200, mesmo sem cobrança — o Financeiro não enxerga o schema do CRM, e um 404 aqui
+        seria lido como erro pela ficha (mesmo critério do Chamados para `status-tecnico`
+        e do Contratos para `status-contratual`). Empresa sem cobrança volta
+        `situacao: sem_cobranca`. Não expõe valor nem forma de pagamento.
+      responses:
+        '200':
+          description: Status financeiro
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/StatusFinanceiro' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/financeiro/empresas/status-financeiro:
+    get:
+      tags: [integracoes]
+      operationId: statusFinanceiroEmLote
+      summary: Status financeiro de várias empresas de uma vez
+      description: >
+        Exige `financeiro.cobranca.ver_resumo`. Máximo 100 ids (Contrato §9.4).
+        Devolve um item para cada id pedido, mesmo sem cobrança.
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema: { type: array, items: { type: string, format: uuid }, maxItems: 100 }
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: Status financeiro de cada empresa
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/StatusFinanceiro' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+components:
+  securitySchemes:
+    bearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Token emitido pelo serviço de identidade (Grupo 2), validado localmente via
+        JWKS. Claims relevantes: sub, tenant_id, roles, perms.
+
+  headers:
+    LocationPagamento:
+      description: Endereço da solicitação de pagamento criada (§8.4)
+      schema: { type: string, example: /api/financeiro/pagamentos/8e9f0a1b-2c3d-4e5f-9a6b-7c8d9e0f1a2b }
+
+  parameters:
+    Pagina:
+      name: pagina
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    Tamanho:
+      name: tamanho
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  responses:
+    DadosInvalidos:
+      description: Dado inválido — ver campo `errors`
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: Não foi possível salvar a cobrança.
+            errors:
+              - { campo: valorRecorrente, codigo: VALOR_NEGATIVO, detalhe: O valor recorrente não pode ser negativo. }
+    NaoAutenticado:
+      description: Sem token, token inválido ou expirado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    SemPermissao:
+      description: Autenticado, mas sem a permissão necessária
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    NaoEncontrado:
+      description: Não existe ou pertence a outro tenant (nunca retorna 403 nesse caso)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [success, data, message, errors]
+      properties:
+        success: { type: boolean }
+        data: {}
+        message: { type: [string, 'null'], example: null }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [campo, codigo, detalhe]
+            properties:
+              campo: { type: string }
+              codigo: { type: string }
+              detalhe: { type: string }
+          example: []
+
+    Pagina:
+      type: object
+      required: [itens, pagina, tamanho, total]
+      properties:
+        itens: { type: array, items: {} }
+        pagina: { type: integer, example: 0 }
+        tamanho: { type: integer, example: 20 }
+        total: { type: integer, example: 137 }
+
+    ResultadoBusca:
+      type: object
+      required: [id, titulo, subtitulo, rota]
+      description: Formato padrão da busca global (Contrato v0.7), igual em todo módulo.
+      properties:
+        id: { type: string, format: uuid }
+        titulo: { type: string, example: 'Cobrança #3a7e91b0 — Distribuidora XYZ' }
+        subtitulo: { type: string, example: 'Vence em 10/09/2026 · R$ 1.490,00' }
+        rota: { type: string, example: '/cobrancas/3a7e91b0-c1d2-4e5f-8a9b-1c2d3e4f5a6b', description: 'Relativa ao urlFrontend do módulo (/modulos/financeiro/), não ao domínio inteiro.' }
+
+    StatusFinanceiro:
+      type: object
+      description: >
+        Um dos quatro status da ficha de empresa (Contrato §10.4); dono é o Financeiro.
+        Resumo sem valores nem forma de pagamento — é o que a permissão fraca
+        `financeiro.cobranca.ver_resumo` pode ver.
+      required: [empresaId, situacao, cobrancasEmAtraso]
+      properties:
+        empresaId: { type: string, format: uuid }
+        situacao:
+          type: string
+          enum: [sem_cobranca, ok, atencao, critico]
+          description: >-
+            sem_cobranca: nenhuma cobrança em aberto · ok: cobranças em aberto, nenhuma
+            vencida · atencao: alguma cobrança vencida há até 30 dias · critico: alguma
+            cobrança vencida há mais de 30 dias
+        cobrancasEmAtraso: { type: integer, minimum: 0, example: 1 }
+        diasMaiorAtraso: { type: [integer, 'null'], minimum: 1, example: 12 }
+        proximoVencimento: { type: [string, 'null'], format: date, example: '2026-10-10' }
+
+    StatusCobranca:
+      type: string
+      enum: [ABERTO, AGENDADO, PAGO, ATRASADO, CANCELADO, ESTORNADO, PARCIAL]
+
+    Cobranca:
+      type: object
+      required: [id, tenantId, clienteId, competencia, vencimento, valor, status]
+      properties:
+        id: { type: string, format: uuid, example: 3a7e91b0-c1d2-4e5f-8a9b-1c2d3e4f5a6b }
+        tenantId: { type: string, format: uuid }
+        clienteId: { type: string, format: uuid, description: UUID do CRM (Grupo 6) — sem dado duplicado do cliente }
+        contratoId: { type: [string, 'null'], format: uuid, description: UUID do módulo Contratos (Grupo 5) }
+        competencia: { type: string, format: date, example: '2026-09-01' }
+        vencimento: { type: string, format: date, example: '2026-09-10' }
+        valor: { type: number, example: 1490.00, multipleOf: 0.01 }
+        desconto: { type: number, default: 0, multipleOf: 0.01 }
+        juros: { type: number, default: 0, multipleOf: 0.01 }
+        multa: { type: number, default: 0, multipleOf: 0.01 }
+        formaPagamento: { type: [string, 'null'], enum: [BOLETO, PIX, CARTAO, TRANSFERENCIA, null] }
+        status: { $ref: '#/components/schemas/StatusCobranca' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        deletedAt: { type: [string, 'null'], format: date-time, example: null }
+
+    CobrancaEntrada:
+      type: object
+      required: [clienteId, competencia, vencimento, valor]
+      properties:
+        clienteId: { type: string, format: uuid }
+        contratoId: { type: [string, 'null'], format: uuid }
+        competencia: { type: string, format: date }
+        vencimento: { type: string, format: date }
+        valor: { type: number, multipleOf: 0.01 }
+        desconto: { type: number, default: 0, multipleOf: 0.01 }
+
+    ContaPagar:
+      type: object
+      required: [id, tenantId, fornecedorNome, competencia, vencimento, valor, aprovado]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        fornecedorNome: { type: string, example: Distribuidora XYZ }
+        fornecedorDocumento: { type: [string, 'null'], example: '12.345.678/0001-90' }
+        categoriaId: { type: [string, 'null'], format: uuid }
+        centroCustoId: { type: [string, 'null'], format: uuid }
+        competencia: { type: string, format: date }
+        vencimento: { type: string, format: date }
+        valor: { type: number, multipleOf: 0.01 }
+        documento: { type: [string, 'null'], example: NF-4521 }
+        aprovado: { type: boolean, default: false }
+        aprovadoPor: { type: [string, 'null'], format: uuid }
+        aprovadoEm: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    ContaPagarEntrada:
+      type: object
+      required: [fornecedorNome, competencia, vencimento, valor]
+      properties:
+        fornecedorNome: { type: string }
+        fornecedorDocumento: { type: [string, 'null'] }
+        categoriaId: { type: [string, 'null'], format: uuid }
+        centroCustoId: { type: [string, 'null'], format: uuid }
+        competencia: { type: string, format: date }
+        vencimento: { type: string, format: date }
+        valor: { type: number, multipleOf: 0.01 }
+        documento: { type: [string, 'null'] }
+
+    ItemRecorrencia:
+      type: object
+      required: [servicoId, descricao, quantidade, unidade, valorUnitario]
+      properties:
+        servicoId: { type: string, format: uuid, description: UUID do módulo Produtos e Serviços (Grupo 1) }
+        descricao: { type: string, example: Backup em nuvem }
+        quantidade: { type: number, example: 500 }
+        unidade: { type: string, example: GB }
+        valorUnitario: { type: number, example: 1.20, multipleOf: 0.01 }
+        franquia: { type: [number, 'null'], example: 400, description: Limite antes de gerar excedente }
+
+    RegraRecorrencia:
+      type: object
+      required: [id, tenantId, contratoId, clienteId, periodicidade, diaGeracao, itens, ativa]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        contratoId: { type: string, format: uuid }
+        clienteId: { type: string, format: uuid }
+        periodicidade: { type: string, enum: [MENSAL, TRIMESTRAL, ANUAL], default: MENSAL }
+        diaGeracao: { type: integer, minimum: 1, maximum: 28, example: 5 }
+        itens: { type: array, items: { $ref: '#/components/schemas/ItemRecorrencia' } }
+        ativa: { type: boolean, default: true }
+        createdAt: { type: string, format: date-time }
+
+    RegraRecorrenciaEntrada:
+      type: object
+      required: [contratoId, clienteId, itens]
+      properties:
+        contratoId: { type: string, format: uuid }
+        clienteId: { type: string, format: uuid }
+        periodicidade: { type: string, enum: [MENSAL, TRIMESTRAL, ANUAL], default: MENSAL }
+        diaGeracao: { type: integer, minimum: 1, maximum: 28 }
+        itens: { type: array, items: { $ref: '#/components/schemas/ItemRecorrencia' } }
+
+    PagamentoSolicitado:
+      type: object
+      required: [pagamentoId, cobrancaId, meio, status, expiraEm]
+      description: Resposta do adaptador de provedor (simulado nesta fase) para uma solicitação de pagamento.
+      properties:
+        pagamentoId: { type: string, format: uuid }
+        cobrancaId: { type: string, format: uuid }
+        meio: { type: string, enum: [PIX, BOLETO, CARTAO] }
+        status: { type: string, enum: [PENDENTE, PROCESSANDO] }
+        pixCopiaCola: { type: [string, 'null'], description: Presente apenas quando meio = PIX }
+        boletoUrl: { type: [string, 'null'], description: Presente apenas quando meio = BOLETO }
+        linkPagamentoCartao: { type: [string, 'null'], description: Presente apenas quando meio = CARTAO }
+        expiraEm: { type: string, format: date-time }
+
+    WebhookPagamentoEntrada:
+      type: object
+      required: [eventoId, assinatura, tipo, cobrancaId]
+      description: Payload recebido do provedor (formato do adaptador simulado nesta fase).
+      properties:
+        eventoId: { type: string, description: ID único do evento no provedor — usado para idempotência }
+        assinatura: { type: string, description: 'Assinatura do payload, validada antes de qualquer processamento' }
+        tipo: { type: string, enum: [pagamento.confirmado, pagamento.estornado, pagamento.falhou] }
+        cobrancaId: { type: string, format: uuid }
+        valorPago: { type: [number, 'null'] }
+        dataPagamento: { type: [string, 'null'], format: date-time }
+
+    ReguaEtapa:
+      type: object
+      required: [id, diasOffset, canal, templateMensagem, ativa]
+      properties:
+        id: { type: string, format: uuid }
+        diasOffset: { type: integer, example: -5, description: 'Negativo = antes do vencimento, positivo = depois' }
+        canal: { type: string, enum: [EMAIL, WHATSAPP, NOTIFICACAO_INTERNA] }
+        templateMensagem: { type: string, example: Sua fatura vence em 5 dias. }
+        ativa: { type: boolean, default: true }
+
+    ReguaCobranca:
+      type: object
+      required: [etapas]
+      properties:
+        etapas: { type: array, items: { $ref: '#/components/schemas/ReguaEtapa' } }
+
+    FaixaAging:
+      type: string
+      enum: ['1-5', '6-15', '16-30', '31-60', '61-90', '90+']
+
+    ItemInadimplencia:
+      type: object
+      required: [cobrancaId, clienteId, vencimento, diasAtraso, faixa, saldoDevedor]
+      properties:
+        cobrancaId: { type: string, format: uuid }
+        clienteId: { type: string, format: uuid }
+        vencimento: { type: string, format: date }
+        diasAtraso: { type: integer, example: 22 }
+        faixa: { $ref: '#/components/schemas/FaixaAging' }
+        saldoDevedor: { type: number, example: 890.00, multipleOf: 0.01 }
+
+    InadimplenciaResponse:
+      type: object
+      required: [itens, totalPorFaixa]
+      properties:
+        itens: { type: array, items: { $ref: '#/components/schemas/ItemInadimplencia' } }
+        totalPorFaixa:
+          type: object
+          additionalProperties: { type: number }
+          example: { '1-5': 3200.00, '6-15': 1490.00, '16-30': 890.00, '31-60': 0, '61-90': 0, '90+': 0 }
+
+    MrrResponse:
+      type: object
+      required: [periodo, mrrNovo, mrrExpansion, mrrContraction, mrrChurned, mrrNetNew, mrrTotal]
+      properties:
+        periodo: { type: string, example: '2026-09' }
+        mrrNovo: { type: number, multipleOf: 0.01 }
+        mrrExpansion: { type: number, multipleOf: 0.01 }
+        mrrContraction: { type: number, multipleOf: 0.01 }
+        mrrChurned: { type: number, multipleOf: 0.01 }
+        mrrNetNew: { type: number, multipleOf: 0.01 }
+        mrrTotal: { type: number, multipleOf: 0.01 }
+
+    DashboardFinanceiro:
+      type: object
+      required: [aReceberHoje, atrasados, pagamentosRecebidosMes, contasAPagarMes, inadimplenciaTotal]
+      properties:
+        aReceberHoje: { type: number, multipleOf: 0.01 }
+        atrasados: { type: number, multipleOf: 0.01 }
+        pagamentosRecebidosMes: { type: number, multipleOf: 0.01 }
+        contasAPagarMes: { type: number, multipleOf: 0.01 }
+        inadimplenciaTotal: { type: number, multipleOf: 0.01 }

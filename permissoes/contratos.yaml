@@ -1,0 +1,79 @@
+# Permissões do módulo Contratos e Documentos (Grupo 5 — Caique).
+# Formato: modulo.recurso.acao, em minúsculas (Contrato de Integração §5.1).
+# Ações usadas: ver, criar, editar, excluir, exportar, aprovar, administrar — mais
+# "assinar", citada como exemplo do próprio §5.1 ("contratos.contrato.assinar").
+#
+# Rastreabilidade: cada permissão referencia o RF do documento
+# "Requisitos_Modulo_Contratos_e_Documentos.pdf" que ela protege.
+modulo: contratos
+permissoes:
+  # Menu (Contrato §11 / modulos/schema.json)
+  - codigo: contratos.acessar
+    descricao: Ver o módulo Contratos e Documentos no menu
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  # Contrato — leitura (RF-04, RF-11, RF-12)
+  - codigo: contratos.contrato.ver_resumo
+    descricao: >-
+      Ver número, cliente, status e valor resumido do contrato — permissão fraca
+      (Contrato §9.3), usada pela busca global, pela consulta em lote e pelo status
+      contratual exibido na ficha de empresa do CRM (§10.4)
+    perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR, PRE_VENDAS, FINANCEIRO, TECNICO, CONTABILIDADE, MARKETING]
+    servicos: [financeiro] # job noturno de cobrança recorrente lê sem usuário na tela (§9.2, §9.3)
+
+  - codigo: contratos.contrato.ver
+    descricao: Ver o cadastro completo do contrato, com serviços, valores e histórico (RF-02, RF-10, RF-12)
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  # Contrato — escrita e ciclo de vida (RF-01, RF-05, RF-06)
+  - codigo: contratos.contrato.criar
+    descricao: >-
+      Cadastrar um novo contrato associado a um cliente (RF-01). Escopo inicial
+      restrito a ADMINISTRADOR, GESTOR e FINANCEIRO; ampliar para VENDEDOR depende
+      de decidir, no grupo de gestores, quem fica com Propostas (Mapa de
+      Fronteiras, itens 18–19, hoje sem dono)
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  - codigo: contratos.contrato.editar
+    descricao: Alterar dados do contrato, respeitando o estado atual e as permissões (RF-06)
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  - codigo: contratos.contrato.aprovar
+    descricao: Mover o contrato de EM_APROVACAO para AGUARDANDO_ASSINATURA (RF-05)
+    perfisPadrao: [ADMINISTRADOR, GESTOR]
+
+  - codigo: contratos.contrato.assinar
+    descricao: >-
+      Registrar a assinatura do contrato e ativá-lo — exemplo citado no próprio
+      Contrato de Integração, §5.1 (RF-02, RF-05)
+    perfisPadrao: [ADMINISTRADOR, GESTOR]
+
+  - codigo: contratos.contrato.excluir
+    descricao: Excluir um contrato ainda em RASCUNHO, cadastrado por engano
+    perfisPadrao: [ADMINISTRADOR]
+
+  - codigo: contratos.contrato.exportar
+    descricao: Exportar o contrato em PDF (otimização RF-O05, priorizada se houver tempo)
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  # Modelos de contrato (RF-03)
+  - codigo: contratos.modelo.ver
+    descricao: Ver os modelos de contrato disponíveis para reduzir a criação manual (RF-03)
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  - codigo: contratos.modelo.administrar
+    descricao: Criar e editar modelos de contrato (RF-03)
+    perfisPadrao: [ADMINISTRADOR, GESTOR]
+
+  # Documentos vinculados ao contrato (RF-08)
+  - codigo: contratos.documento.ver
+    descricao: Ver e baixar os documentos associados a um contrato (RF-08)
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  - codigo: contratos.documento.criar
+    descricao: Associar um novo documento a um contrato (RF-08)
+    perfisPadrao: [ADMINISTRADOR, GESTOR, FINANCEIRO]
+
+  - codigo: contratos.documento.excluir
+    descricao: Remover um documento associado a um contrato
+    perfisPadrao: [ADMINISTRADOR]

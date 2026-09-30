@@ -1,11 +1,13 @@
 openapi: 3.1.0
 info:
   title: CRM
-  version: 0.1.0
+  version: 0.3.0
   summary: Contrato do módulo CRM — dono de empresas, contatos e unidades para todo o sistema.
   description: |
-    Cobre os endpoints de Empresas e Contatos fechados no Contrato de Integração §10.
-    Oportunidades, Funil e Propostas entram em versões seguintes, conforme forem implementados.
+    Cobre os endpoints de Empresas e Contatos fechados no Contrato de Integração §10, já
+    ajustados após a revisão da issue #3, e, a partir da 0.3.0, Funil e Oportunidades.
+    Os eventos publicados estão em crm.asyncapi.yaml.
+    Propostas não faz parte deste contrato — é escopo do Grupo 5 (Contratos e Documentos).
   license:
     name: Uso acadêmico — Projeto Integrador 2026
     identifier: LicenseRef-Academico
@@ -17,6 +19,10 @@ servers:
 tags:
   - name: empresas
     description: Cadastro-mestre de empresas, contatos e unidades
+  - name: funil
+    description: Funis de vendas e suas etapas
+  - name: oportunidades
+    description: Negociações em andamento, ganhas e perdidas
   - name: saude
     description: Estado do serviço
 
@@ -29,7 +35,10 @@ paths:
       tags: [empresas]
       operationId: listarEmpresas
       summary: Listar empresas do tenant
-      description: Exige `crm.empresa.ver_resumo`.
+      description: |
+        Exige `crm.empresa.ver` — devolve o cadastro completo (vendedor, status comercial,
+        segmento, porte). Quem só tem `crm.empresa.ver_resumo` usa `/empresas/resumo` ou
+        `/busca` (Contrato §9.3).
       parameters:
         - $ref: '#/components/parameters/Pagina'
         - $ref: '#/components/parameters/Tamanho'
@@ -98,12 +107,16 @@ paths:
                 errors:
                   - { campo: cnpj, codigo: EMPRESA_DUPLICADA, detalhe: CNPJ já cadastrado para este tenant. }
 
-  /api/crm/empresas/busca:
+  /api/crm/busca:
     get:
       tags: [empresas]
-      operationId: buscarEmpresas
-      summary: Busca textual, para a busca global da casca
-      description: Exige `crm.empresa.ver_resumo`. Devolve no máximo 5 resultados.
+      operationId: buscaGlobal
+      summary: Busca global do módulo, chamada em paralelo pela casca em todos os módulos
+      description: |
+        Exige `crm.empresa.ver_resumo`. Devolve no máximo 5 resultados, no formato único
+        do Contrato de Integração §8.6 — mesmo caminho (`/api/{modulo}/busca?q=`) e mesmo
+        formato de resposta usados por todos os módulos. Hoje busca apenas em Empresas;
+        outras entidades do CRM entram aqui conforme forem publicadas.
       parameters:
         - name: q
           in: query
@@ -120,8 +133,10 @@ paths:
                   - properties:
                       data:
                         type: array
-                        items: { $ref: '#/components/schemas/EmpresaResumo' }
+                        maxItems: 5
+                        items: { $ref: '#/components/schemas/ResultadoBusca' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
 
   /api/crm/empresas/resumo:
     get:
@@ -150,6 +165,7 @@ paths:
                         items: { $ref: '#/components/schemas/EmpresaResumo' }
         '400': { $ref: '#/components/responses/DadosInvalidos' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
 
   /api/crm/empresas/{id}:
     parameters:
@@ -184,7 +200,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/NovaEmpresa' }
+            schema: { $ref: '#/components/schemas/EditarEmpresa' }
       responses:
         '200':
           description: Empresa atualizada
@@ -222,6 +238,7 @@ paths:
                   - properties:
                       data: { $ref: '#/components/schemas/EmpresaResumo' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
         '404': { $ref: '#/components/responses/NaoEncontrado' }
 
   /api/crm/empresas/{id}/contatos:
@@ -234,10 +251,13 @@ paths:
       tags: [empresas]
       operationId: contatosDaEmpresa
       summary: Contatos vinculados à empresa
-      description: Exige `crm.contato.ver`.
+      description: Exige `crm.contato.ver`. Listagem paginada (Contrato §8.3).
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
       responses:
         '200':
-          description: Lista de contatos
+          description: Página de contatos
           content:
             application/json:
               schema:
@@ -245,8 +265,12 @@ paths:
                   - $ref: '#/components/schemas/Envelope'
                   - properties:
                       data:
-                        type: array
-                        items: { $ref: '#/components/schemas/Contato' }
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Contato' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
         '403': { $ref: '#/components/responses/SemPermissao' }
         '404': { $ref: '#/components/responses/NaoEncontrado' }
@@ -275,6 +299,7 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/Unidade' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
         '404': { $ref: '#/components/responses/NaoEncontrado' }
 
   /api/crm/contatos:
@@ -282,7 +307,10 @@ paths:
       tags: [empresas]
       operationId: criarContato
       summary: Criar contato
-      description: Exige `crm.contato.criar`.
+      description: |
+        Exige `crm.contato.criar`. E-mail já cadastrado na mesma empresa responde 409 com
+        o id existente em `data.contatoId` — o chamador reaproveita esse id em vez de tratar
+        como erro (evita contato duplicado a cada reenvio do mesmo formulário, Contrato §12.7).
       requestBody:
         required: true
         content:
@@ -291,6 +319,9 @@ paths:
       responses:
         '201':
           description: Contato criado
+          headers:
+            Location:
+              schema: { type: string, example: /api/crm/contatos/7b1e4c3a-2f9d-4a1e-8c3b-9d2f1a4b5c6e }
           content:
             application/json:
               schema:
@@ -298,6 +329,46 @@ paths:
                   - $ref: '#/components/schemas/Envelope'
                   - properties:
                       data: { $ref: '#/components/schemas/Contato' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '409':
+          description: E-mail já cadastrado nesta empresa
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+              example:
+                success: false
+                data: { contatoId: 7b1e4c3a-2f9d-4a1e-8c3b-9d2f1a4b5c6e }
+                message: Já existe contato com este e-mail nesta empresa.
+                errors:
+                  - { campo: email, codigo: CONTATO_DUPLICADO, detalhe: E-mail já cadastrado para esta empresa. }
+
+  /api/crm/contatos/resumo:
+    get:
+      tags: [empresas]
+      operationId: resumoContatosEmLote
+      summary: Resumo de vários contatos de uma vez
+      description: Exige `crm.contato.ver_resumo`. Máximo 100 ids por chamada (Contrato §9.4).
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema: { type: array, items: { type: string, format: uuid }, maxItems: 100 }
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: Resumos encontrados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ContatoResumo' }
         '400': { $ref: '#/components/responses/DadosInvalidos' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
         '403': { $ref: '#/components/responses/SemPermissao' }
@@ -361,7 +432,10 @@ paths:
       tags: [empresas]
       operationId: resumoContato
       summary: Nome, cargo, e-mail e telefone
-      description: Exige `crm.contato.ver`.
+      description: |
+        Exige `crm.contato.ver_resumo` — permissão fraca, padrão de todo perfil operacional
+        (Contrato §9.3). Antes exigia `crm.contato.ver`, o que devolvia 403 para Chamados,
+        Financeiro e Marketing.
       responses:
         '200':
           description: Resumo
@@ -373,7 +447,491 @@ paths:
                   - properties:
                       data: { $ref: '#/components/schemas/ContatoResumo' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
         '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/funis:
+    get:
+      tags: [funil]
+      operationId: listarFunis
+      summary: Funis do tenant, cada um com suas etapas em ordem
+      description: |
+        Exige `crm.funil.ver`. Na primeira chamada de um tenant sem funis, o CRM cria o funil
+        padrão (Captação, Qualificação, Diagnóstico Gratuito, Proposta, Negociação) e já o
+        devolve. Não é paginado: um tenant tem poucos funis.
+      responses:
+        '200':
+          description: Funis
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Funil' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [funil]
+      operationId: criarFunil
+      summary: Criar funil com suas etapas
+      description: Exige `crm.funil.administrar`. As etapas entram na ordem em que foram enviadas.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovoFunil' }
+      responses:
+        '201':
+          description: Funil criado
+          headers:
+            Location:
+              schema: { type: string, example: /api/crm/funis/0b6f1d2e-3c4a-4e5f-8a9b-1c2d3e4f5a6b }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Funil' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/crm/funis/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [funil]
+      operationId: verFunil
+      summary: Funil com suas etapas em ordem
+      description: Exige `crm.funil.ver`.
+      responses:
+        '200':
+          description: Funil
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Funil' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [funil]
+      operationId: editarFunil
+      summary: Renomear o funil ou torná-lo o padrão
+      description: |
+        Exige `crm.funil.administrar`. Marcar `padrao: true` desmarca o padrão anterior; um
+        tenant tem sempre exatamente um funil padrão.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EditarFunil' }
+      responses:
+        '200':
+          description: Funil atualizado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Funil' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    delete:
+      tags: [funil]
+      operationId: excluirFunil
+      summary: Excluir funil
+      description: |
+        Exige `crm.funil.administrar`. O funil padrão e funis que ainda têm oportunidades
+        respondem 409 (`FUNIL_PADRAO` ou `FUNIL_COM_OPORTUNIDADES`).
+      responses:
+        '200':
+          description: Funil excluído
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+
+  /api/crm/funis/{id}/etapas:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [funil]
+      operationId: criarEtapa
+      summary: Acrescentar etapa ao fim do funil
+      description: Exige `crm.funil.administrar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaEtapa' }
+      responses:
+        '201':
+          description: Etapa criada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Etapa' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/funis/{id}/etapas/ordem:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [funil]
+      operationId: reordenarEtapas
+      summary: Reordenar as etapas do funil
+      description: |
+        Exige `crm.funil.administrar`. `etapaIds` traz todas as etapas do funil, cada uma uma
+        única vez, na nova ordem; faltar ou sobrar etapa responde 400.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrdemEtapas' }
+      responses:
+        '200':
+          description: Funil com as etapas na nova ordem
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Funil' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/etapas/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [funil]
+      operationId: editarEtapa
+      summary: Renomear etapa ou trocar a cor
+      description: Exige `crm.funil.administrar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaEtapa' }
+      responses:
+        '200':
+          description: Etapa atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Etapa' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    delete:
+      tags: [funil]
+      operationId: excluirEtapa
+      summary: Remover etapa
+      description: |
+        Exige `crm.funil.administrar`. Etapa com oportunidades responde 409
+        (`ETAPA_COM_OPORTUNIDADES`) até que elas sejam movidas; a última etapa de um funil
+        também não pode ser removida (`ULTIMA_ETAPA`).
+      responses:
+        '200':
+          description: Etapa removida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+
+  /api/crm/oportunidades:
+    get:
+      tags: [oportunidades]
+      operationId: listarOportunidades
+      summary: Listar oportunidades, com o recorte de dono e equipe
+      description: |
+        Exige `crm.oportunidade.ver`. Devolve as oportunidades das quais o usuário é
+        responsável, as das equipes do claim `equipes` e as ainda sem responsável (leads
+        para triagem). Com `crm.oportunidade.ver_todas`, ou com token de serviço, devolve
+        todas do tenant (Contrato §5.3 e §5.4). O Kanban usa `funilId` com `status=aberta`.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - name: ordenar
+          in: query
+          schema:
+            type: string
+            enum: ['criadoEm,desc', 'criadoEm,asc', 'dataProximoPasso,asc', 'dataPrevistaFechamento,asc', 'valorMrr,desc']
+            default: 'criadoEm,desc'
+        - name: funilId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: etapaId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string, enum: [aberta, ganha, perdida] }
+        - name: responsavelId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: empresaId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Página de oportunidades
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Oportunidade' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [oportunidades]
+      operationId: criarOportunidade
+      summary: Criar oportunidade
+      description: |
+        Exige `crm.oportunidade.criar`, também concedida ao token de serviço da Landing
+        (Contrato §12.7). Sem `etapaId`, entra na primeira etapa do funil padrão. Sem
+        `responsavelId`, o responsável é o usuário do token; criada por serviço, fica sem
+        responsável e, sem próximo passo informado, recebe "Fazer o primeiro contato" com a
+        data do dia. Empresa, contato, unidade ou etapa inexistentes respondem 400 no campo
+        correspondente. Publica `crm.oportunidade.criada` depois do commit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaOportunidade' }
+      responses:
+        '201':
+          description: Oportunidade criada
+          headers:
+            Location:
+              schema: { type: string, example: /api/crm/oportunidades/9f1c2d3e-4a5b-4c6d-8e7f-0a1b2c3d4e5f }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Oportunidade' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/crm/oportunidades/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [oportunidades]
+      operationId: verOportunidade
+      summary: Oportunidade completa
+      description: |
+        Exige `crm.oportunidade.ver`. Fora do recorte de dono e equipe responde 404, como
+        registro de outro tenant.
+      responses:
+        '200':
+          description: Oportunidade
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Oportunidade' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [oportunidades]
+      operationId: editarOportunidade
+      summary: Editar dados comerciais da oportunidade
+      description: |
+        Exige `crm.oportunidade.editar`. Etapa e status mudam só pelas ações `mover`,
+        `ganhar` e `perder`. Oportunidade fechada responde 409 (`OPORTUNIDADE_FECHADA`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EditarOportunidade' }
+      responses:
+        '200':
+          description: Oportunidade atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Oportunidade' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+    delete:
+      tags: [oportunidades]
+      operationId: excluirOportunidade
+      summary: Excluir oportunidade (soft delete)
+      description: Exige `crm.oportunidade.excluir`.
+      responses:
+        '200':
+          description: Oportunidade excluída
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/oportunidades/{id}/mover:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [oportunidades]
+      operationId: moverOportunidade
+      summary: Mudar de etapa — o arrastar do Kanban
+      description: |
+        Exige `crm.oportunidade.editar`. A etapa de destino precisa ser do mesmo funil
+        (400 em `etapaId`). Próximo passo e data, quando enviados, substituem os atuais.
+        Oportunidade fechada responde 409 (`OPORTUNIDADE_FECHADA`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MoverOportunidade' }
+      responses:
+        '200':
+          description: Oportunidade na nova etapa
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Oportunidade' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+
+  /api/crm/oportunidades/{id}/ganhar:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [oportunidades]
+      operationId: ganharOportunidade
+      summary: Marcar como ganha
+      description: |
+        Exige `crm.oportunidade.editar`. Registra `fechadaEm`, tira a oportunidade do Kanban
+        e publica `crm.oportunidade.ganha` depois do commit — é o aviso para Contratos e
+        Financeiro. Oportunidade já fechada responde 409 (`OPORTUNIDADE_FECHADA`).
+      responses:
+        '200':
+          description: Oportunidade ganha
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Oportunidade' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+
+  /api/crm/oportunidades/{id}/perder:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [oportunidades]
+      operationId: perderOportunidade
+      summary: Marcar como perdida, com o motivo
+      description: |
+        Exige `crm.oportunidade.editar`. O motivo é obrigatório (RF-CRM-04). Registra
+        `fechadaEm` e tira a oportunidade do Kanban. Oportunidade já fechada responde 409
+        (`OPORTUNIDADE_FECHADA`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PerderOportunidade' }
+      responses:
+        '200':
+          description: Oportunidade perdida
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Oportunidade' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
 
   /api/crm/health:
     get:
@@ -438,6 +996,17 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Envelope' }
+    Conflito:
+      description: A operação conflita com o estado atual do registro
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: Esta etapa ainda tem oportunidades.
+            errors:
+              - { campo: id, codigo: ETAPA_COM_OPORTUNIDADES, detalhe: Mova as oportunidades antes de remover a etapa. }
 
   schemas:
     Envelope:
@@ -491,6 +1060,31 @@ components:
             statusComercial: { type: string, enum: [lead, prospect, cliente_ativo, inativo] }
             criadoEm: { type: string, format: date-time }
 
+    ResultadoBusca:
+      type: object
+      required: [id, titulo, subtitulo, rota]
+      description: Formato único de busca global do sistema (Contrato §8.6). subtitulo sempre presente; string vazia quando a empresa não tem CNPJ.
+      properties:
+        id: { type: string, format: uuid }
+        titulo: { type: string, example: Centinela Soluções Digitais }
+        subtitulo: { type: [string, 'null'], example: '28.954.678/0001-22' }
+        rota: { type: string, example: /empresas/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d, description: Relativa ao urlFrontend do módulo }
+
+    EditarEmpresa:
+      type: object
+      required: [razaoSocial]
+      description: Schema de edição — sem origem/origemModuloId, que não mudam após a criação.
+      properties:
+        razaoSocial: { type: string, minLength: 1, maxLength: 255 }
+        nomeFantasia: { type: [string, 'null'], maxLength: 255 }
+        cnpj: { type: [string, 'null'], pattern: '^[0-9]{14}$' }
+        segmento: { type: [string, 'null'] }
+        porte: { type: [string, 'null'] }
+        cidade: { type: [string, 'null'] }
+        estado: { type: [string, 'null'], minLength: 2, maxLength: 2 }
+        vendedorResponsavel: { type: [string, 'null'], format: uuid }
+        statusComercial: { type: [string, 'null'], enum: [lead, prospect, cliente_ativo, inativo] }
+
     EmpresaResumo:
       type: object
       required: [id, razaoSocial]
@@ -521,6 +1115,11 @@ components:
         papel: { type: [string, 'null'], enum: [decisor, influenciador, tecnico, financeiro, proprietario, outro] }
         consentimentoLgpd: { type: [string, 'null'], enum: [concedido, pendente, revogado] }
         preferenciaComunicacao: { type: [string, 'null'], enum: [telefone, whatsapp, email] }
+        origem: { type: [string, 'null'], example: landing, description: Módulo ou canal que originou o cadastro (Contrato §12.7) }
+        origemModuloId: { type: [string, 'null'], example: form-abc123, description: Identificador na origem }
+        utmSource: { type: [string, 'null'] }
+        utmMedium: { type: [string, 'null'] }
+        utmCampaign: { type: [string, 'null'] }
 
     Contato:
       allOf:
@@ -539,3 +1138,145 @@ components:
         cargo: { type: [string, 'null'] }
         email: { type: [string, 'null'] }
         telefone: { type: [string, 'null'] }
+
+    Etapa:
+      type: object
+      required: [id, funilId, nome, ordem]
+      properties:
+        id: { type: string, format: uuid }
+        funilId: { type: string, format: uuid }
+        nome: { type: string, example: Diagnóstico Gratuito }
+        ordem: { type: integer, minimum: 1, example: 3 }
+        cor: { type: [string, 'null'], pattern: '^#[0-9A-Fa-f]{6}$', example: '#0E9F8E' }
+
+    NovaEtapa:
+      type: object
+      required: [nome]
+      properties:
+        nome: { type: string, minLength: 1, maxLength: 100 }
+        cor: { type: [string, 'null'], pattern: '^#[0-9A-Fa-f]{6}$' }
+
+    Funil:
+      type: object
+      required: [id, nome, padrao, etapas]
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string, example: Vendas novas }
+        padrao: { type: boolean }
+        etapas:
+          type: array
+          description: Em ordem crescente de `ordem`.
+          items: { $ref: '#/components/schemas/Etapa' }
+
+    NovoFunil:
+      type: object
+      required: [nome, etapas]
+      properties:
+        nome: { type: string, minLength: 1, maxLength: 100 }
+        etapas:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/NovaEtapa' }
+
+    EditarFunil:
+      type: object
+      required: [nome]
+      properties:
+        nome: { type: string, minLength: 1, maxLength: 100 }
+        padrao: { type: boolean, description: true torna este o funil padrão; false é ignorado }
+
+    OrdemEtapas:
+      type: object
+      required: [etapaIds]
+      properties:
+        etapaIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, format: uuid }
+
+    EditarOportunidade:
+      type: object
+      required: [titulo, empresaId, proximoPasso, dataProximoPasso]
+      description: Campos comerciais. Etapa e status mudam só pelas ações mover, ganhar e perder.
+      properties:
+        titulo: { type: string, minLength: 1, maxLength: 255, example: Backup gerenciado + antivírus }
+        empresaId: { type: string, format: uuid }
+        contatoId: { type: [string, 'null'], format: uuid }
+        unidadeId: { type: [string, 'null'], format: uuid }
+        tipo: { type: string, enum: [nova, upsell, cross_sell], default: nova }
+        produtoId: { type: [string, 'null'], format: uuid, description: 'Produto do Grupo 1, sem validação local' }
+        valorImplantacao: { type: [number, 'null'], minimum: 0, multipleOf: 0.01, example: 1500.00, description: 'Reais, até 2 casas (§8.7); mais casas responde 400 PRECISAO_EXCEDIDA' }
+        valorMrr: { type: [number, 'null'], minimum: 0, multipleOf: 0.01, example: 890.00, description: 'Reais, até 2 casas (§8.7); mais casas responde 400 PRECISAO_EXCEDIDA' }
+        probabilidade: { type: [integer, 'null'], minimum: 0, maximum: 100 }
+        dataPrevistaFechamento: { type: [string, 'null'], format: date }
+        proximoPasso: { type: string, minLength: 1, maxLength: 255, example: Apresentar o resultado do diagnóstico }
+        dataProximoPasso: { type: string, format: date }
+        responsavelId: { type: [string, 'null'], format: uuid }
+
+    NovaOportunidade:
+      type: object
+      required: [titulo, empresaId]
+      description: |
+        Próximo passo e data são obrigatórios quando quem cria é um usuário; na criação por
+        serviço, se ausentes, o CRM preenche "Fazer o primeiro contato" com a data do dia.
+      properties:
+        titulo: { type: string, minLength: 1, maxLength: 255 }
+        empresaId: { type: string, format: uuid }
+        contatoId: { type: [string, 'null'], format: uuid }
+        unidadeId: { type: [string, 'null'], format: uuid }
+        etapaId: { type: [string, 'null'], format: uuid, description: 'Sem ela, primeira etapa do funil padrão' }
+        tipo: { type: string, enum: [nova, upsell, cross_sell], default: nova }
+        produtoId: { type: [string, 'null'], format: uuid }
+        valorImplantacao: { type: [number, 'null'], minimum: 0, multipleOf: 0.01, description: 'Reais, até 2 casas (§8.7); mais casas responde 400 PRECISAO_EXCEDIDA' }
+        valorMrr: { type: [number, 'null'], minimum: 0, multipleOf: 0.01, description: 'Reais, até 2 casas (§8.7); mais casas responde 400 PRECISAO_EXCEDIDA' }
+        probabilidade: { type: [integer, 'null'], minimum: 0, maximum: 100 }
+        dataPrevistaFechamento: { type: [string, 'null'], format: date }
+        proximoPasso: { type: [string, 'null'], maxLength: 255 }
+        dataProximoPasso: { type: [string, 'null'], format: date }
+        responsavelId: { type: [string, 'null'], format: uuid }
+        origem: { type: [string, 'null'], maxLength: 30, example: landing }
+        origemModuloId: { type: [string, 'null'], maxLength: 100, example: form-abc123 }
+
+    Oportunidade:
+      type: object
+      required: [id, titulo, empresaId, funilId, etapaId, tipo, status, criadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        titulo: { type: string }
+        empresaId: { type: string, format: uuid }
+        contatoId: { type: [string, 'null'], format: uuid }
+        unidadeId: { type: [string, 'null'], format: uuid }
+        funilId: { type: string, format: uuid }
+        etapaId: { type: string, format: uuid }
+        tipo: { type: string, enum: [nova, upsell, cross_sell] }
+        produtoId: { type: [string, 'null'], format: uuid }
+        valorImplantacao: { type: [number, 'null'] }
+        valorMrr: { type: [number, 'null'] }
+        probabilidade: { type: [integer, 'null'] }
+        dataPrevistaFechamento: { type: [string, 'null'], format: date }
+        proximoPasso: { type: [string, 'null'] }
+        dataProximoPasso: { type: [string, 'null'], format: date }
+        proximoPassoAtrasado: { type: boolean, description: true quando aberta e dataProximoPasso já passou (RF-CRM-03) }
+        responsavelId: { type: [string, 'null'], format: uuid }
+        equipeId: { type: [string, 'null'], format: uuid }
+        status: { type: string, enum: [aberta, ganha, perdida] }
+        motivoPerda: { type: [string, 'null'] }
+        fechadaEm: { type: [string, 'null'], format: date-time }
+        origem: { type: [string, 'null'] }
+        origemModuloId: { type: [string, 'null'] }
+        criadoEm: { type: string, format: date-time }
+
+    MoverOportunidade:
+      type: object
+      required: [etapaId]
+      properties:
+        etapaId: { type: string, format: uuid }
+        proximoPasso: { type: [string, 'null'], minLength: 1, maxLength: 255 }
+        dataProximoPasso: { type: [string, 'null'], format: date }
+
+    PerderOportunidade:
+      type: object
+      required: [motivo]
+      properties:
+        motivo: { type: string, minLength: 1, maxLength: 255, example: Preço acima do orçamento }

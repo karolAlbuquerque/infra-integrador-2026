@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Cria o .env a partir do .env.example, com senhas aleatórias e uma chave RS256 nova.
+# Cria o .env a partir do .env.example, com senhas aleatórias, uma chave RS256 nova e a chave
+# AES que cifra os segredos do segundo fator.
 # Uso: scripts/gerar-env.sh [--forcar]
 # No Windows, rode pelo Git Bash, que já traz openssl e base64.
 set -euo pipefail
@@ -21,9 +22,11 @@ while IFS= read -r linha || [[ -n "$linha" ]]; do
     echo "${BASH_REMATCH[1]}=$(openssl rand -hex 16)"
   elif [[ "$linha" == IDENTITY_JWT_CHAVE_PRIVADA=* ]]; then
     echo "IDENTITY_JWT_CHAVE_PRIVADA=$chave"
+  elif [[ "$linha" == IDENTITY_SEGUNDO_FATOR_CHAVE=* ]]; then
+    echo "IDENTITY_SEGUNDO_FATOR_CHAVE=$(openssl rand -base64 32)"
   else
     echo "$linha"
   fi
 done < .env.example > .env
 
-echo ".env criado com senhas aleatórias e chave do JWT."
+echo ".env criado com senhas aleatórias, chave do JWT e chave do segundo fator."

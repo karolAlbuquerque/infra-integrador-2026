@@ -1,0 +1,16 @@
+{
+  "codigo": "contratos",
+  "nome": "Contratos",
+  "grupo": "Grupo 5 — Contratos e Documentos",
+  "icone": "file-signature",
+  "urlFrontend": "/modulos/contratos/",
+  "prefixoApi": "/api/contratos",
+  "permissaoMenu": "contratos.acessar",
+  "ordemMenu": 40,
+  "healthcheck": "/api/contratos/health",
+  "itensSubmenu": [
+    { "rota": "/contratos", "nome": "Contratos", "permissao": "contratos.contrato.ver" },
+    { "rota": "/modelos", "nome": "Modelos de Contrato", "permissao": "contratos.modelo.ver" },
+    { "rota": "/documentos", "nome": "Documentos", "permissao": "contratos.documento.ver" }
+  ]
+}

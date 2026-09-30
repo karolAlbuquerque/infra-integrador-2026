@@ -12,6 +12,7 @@ permissoes:
   - codigo: exemplo.item.criar
     descricao: Criar itens de exemplo
     perfisPadrao: [ADMINISTRADOR]
+    servicos: [landing]      # o token de serviço do landing também pode criar item
   - codigo: exemplo.item.excluir
     descricao: Excluir itens de exemplo
     perfisPadrao: [ADMINISTRADOR]

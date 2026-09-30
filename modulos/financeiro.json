@@ -1,0 +1,18 @@
+{
+  "codigo": "financeiro",
+  "nome": "Financeiro",
+  "grupo": "Grupo 8 — Financeiro",
+  "icone": "wallet",
+  "urlFrontend": "/modulos/financeiro/",
+  "prefixoApi": "/api/financeiro",
+  "permissaoMenu": "financeiro.acessar",
+  "ordemMenu": 70,
+  "healthcheck": "/api/financeiro/health",
+  "itensSubmenu": [
+    { "rota": "/cobrancas", "nome": "Contas a Receber", "permissao": "financeiro.contareceber.ver" },
+    { "rota": "/contas-pagar", "nome": "Contas a Pagar", "permissao": "financeiro.contapagar.ver" },
+    { "rota": "/recorrencias", "nome": "Recorrência", "permissao": "financeiro.recorrencia.ver" },
+    { "rota": "/inadimplencia", "nome": "Inadimplência", "permissao": "financeiro.inadimplencia.ver" },
+    { "rota": "/dashboard", "nome": "Dashboard", "permissao": "financeiro.dashboard.ver" }
+  ]
+}

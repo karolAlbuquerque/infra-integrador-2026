@@ -18,7 +18,13 @@ const dataHora = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyl
 
 export function App() {
   const [sessao, setSessao] = useState<Sessao | null>(sessaoAtual())
-  useEffect(() => aoMudarSessao(setSessao), [])
+  useEffect(() => {
+    const parar = aoMudarSessao(setSessao)
+    // A casca responde ao modulo:pronto na hora: a sessão pode ter chegado entre o primeiro
+    // render e esta inscrição. Sem reler aqui, ela se perde e a tela fica esperando para sempre.
+    setSessao(sessaoAtual())
+    return parar
+  }, [])
 
   if (!sessao) {
     return estaEmbutido() ? <Aguardando /> : <EntradaDeTeste />
@@ -28,7 +34,7 @@ export function App() {
 
 function Aguardando() {
   return (
-    <main className="grid min-h-40 place-items-center p-6 text-sm text-muted-foreground">
+    <main className="grid min-h-40 place-items-center p-6 text-sm text-texto-3">
       Aguardando a sessão da plataforma…
     </main>
   )
@@ -56,25 +62,25 @@ function EntradaDeTeste() {
 
   return (
     <main className="mx-auto max-w-sm p-6">
-      <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Modo direto · desenvolvimento</p>
-      <h1 className="mt-2 text-xl font-semibold">Entrar com usuário de teste</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="font-mono text-xs uppercase tracking-widest text-texto-3">Modo direto · desenvolvimento</p>
+      <h1 className="mt-2 text-xl font-bold text-titulo">Entrar com usuário de teste</h1>
+      <p className="mt-1 text-sm text-texto-3">
         Dentro da plataforma, este passo não existe: a casca entrega a sessão.
       </p>
       <form onSubmit={entrar} className="mt-6 grid gap-3">
         <label className="grid gap-1 text-sm">
           E-mail
           <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-            className="rounded-md border border-input bg-card px-3 py-2" />
+            className="h-9 rounded-lg border border-borda-forte bg-superficie px-3 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20" />
         </label>
         <label className="grid gap-1 text-sm">
           Senha
           <input id="senha" type="password" required value={senha} onChange={(e) => setSenha(e.target.value)}
-            className="rounded-md border border-input bg-card px-3 py-2" />
+            className="h-9 rounded-lg border border-borda-forte bg-superficie px-3 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20" />
         </label>
-        {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
+        {erro && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
         <button type="submit" disabled={enviando}
-          className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60">
+          className="h-9 rounded-lg bg-brand-800 px-4 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-55">
           {enviando ? 'Entrando…' : 'Entrar'}
         </button>
       </form>
@@ -104,43 +110,43 @@ function Itens({ sessao }: { sessao: Sessao }) {
   }, [carregar, sessao.token])
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
-      <header className="flex flex-wrap items-baseline justify-between gap-2 border-b pb-4">
+    <main>
+      {/* Cabeçalho de página do design system (§12.3): título, contador e ações sobre brand-950 */}
+      <header className="flex flex-wrap items-center justify-between gap-2 bg-brand-950 px-5 py-3.5 text-white">
         <div>
-          <h1 className="text-xl font-semibold">Itens</h1>
-          <p className="text-sm text-muted-foreground">Módulo de exemplo · {sessao.usuario.nome}</p>
+          <h1 className="text-lg font-bold tracking-tight">Itens</h1>
+          <p className="mt-0.5 text-xs text-brand-300">
+            Módulo de exemplo · {sessao.usuario.nome}
+            {estado.fase === 'pronto' && ` · ${estado.pagina.total} ${estado.pagina.total === 1 ? 'item' : 'itens'}`}
+          </p>
         </div>
-        {estado.fase === 'pronto' && (
-          <span className="font-mono text-xs text-muted-foreground tabular-nums">
-            {estado.pagina.total} {estado.pagina.total === 1 ? 'item' : 'itens'}
-          </span>
-        )}
       </header>
+      <div className="mx-auto max-w-3xl p-5">
 
       <NovoItem aoCriar={carregar} />
 
       <section className="mt-6" aria-live="polite">
-        {estado.fase === 'carregando' && <p className="text-sm text-muted-foreground">Carregando…</p>}
+        {estado.fase === 'carregando' && <p className="text-sm text-texto-3">Carregando…</p>}
         {estado.fase === 'erro' && (
-          <div role="alert" className="rounded-md border border-destructive/40 p-4 text-sm">
-            <p className="text-destructive">{estado.mensagem}</p>
-            <button type="button" onClick={() => void carregar()} className="mt-2 underline">Tentar de novo</button>
+          <div role="alert" className="rounded-xl border border-red-300 dark:border-red-500/40 p-4 text-sm">
+            <p className="text-red-600 dark:text-red-400">{estado.mensagem}</p>
+            <button type="button" onClick={() => void carregar()} className="mt-2 font-medium text-brand-700 underline dark:text-brand-400">Tentar de novo</button>
           </div>
         )}
         {estado.fase === 'pronto' && estado.pagina.itens.length === 0 && (
-          <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed border-borda-forte p-6 text-center text-sm text-texto-3">
             Nenhum item ainda. Crie o primeiro acima.
           </p>
         )}
         {estado.fase === 'pronto' && estado.pagina.itens.length > 0 && (
-          <ul className="divide-y rounded-md border bg-card">
+          <ul className="divide-y divide-borda overflow-hidden rounded-xl border border-borda bg-superficie shadow-sm">
             {estado.pagina.itens.map((item) => (
               <li key={item.id} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-3">
                 <div>
-                  <p className="font-medium">{item.nome}</p>
-                  {item.descricao && <p className="text-sm text-muted-foreground">{item.descricao}</p>}
+                  <p className="font-medium text-titulo">{item.nome}</p>
+                  {item.descricao && <p className="text-sm text-texto-3">{item.descricao}</p>}
                 </div>
-                <time dateTime={item.criadoEm} className="font-mono text-xs text-muted-foreground">
+                <time dateTime={item.criadoEm} className="font-mono text-xs text-texto-3">
                   {dataHora.format(new Date(item.criadoEm))}
                 </time>
               </li>
@@ -148,6 +154,7 @@ function Itens({ sessao }: { sessao: Sessao }) {
           </ul>
         )}
       </section>
+      </div>
     </main>
   )
 }
@@ -178,12 +185,12 @@ function NovoItem({ aoCriar }: { aoCriar: () => Promise<void> }) {
     <form onSubmit={criar} className="mt-6 flex flex-wrap items-start gap-2">
       <label htmlFor="novo-item" className="sr-only">Nome do novo item</label>
       <input id="novo-item" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome do novo item"
-        maxLength={200} className="min-w-0 flex-1 rounded-md border border-input bg-card px-3 py-2 text-sm" />
+        maxLength={200} className="h-9 min-w-0 flex-1 rounded-lg border border-borda-forte bg-superficie px-3 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20" />
       <button type="submit" disabled={enviando || !nome.trim()}
-        className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60">
+        className="h-9 rounded-lg bg-brand-800 px-4 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-55">
         {enviando ? 'Criando…' : 'Criar item'}
       </button>
-      {erro && <p role="alert" className="basis-full text-sm text-destructive">{erro}</p>}
+      {erro && <p role="alert" className="basis-full text-sm text-red-600 dark:text-red-400">{erro}</p>}
     </form>
   )
 }

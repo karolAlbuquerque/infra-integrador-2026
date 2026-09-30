@@ -1,0 +1,97 @@
+asyncapi: 3.0.0
+info:
+  title: Landing Pages e Formulários — eventos publicados
+  version: 0.1.0
+  description: |
+    Eventos que o módulo Landing publica na exchange `landing.eventos`. Documenta, por ora,
+    só o evento de responsabilidade de Rafael (envios e evento de lead) — os demais eventos
+    do módulo, se existirem, entram aqui conforme o restante do time definir os seus.
+
+    `landing.formulario.recebido` é publicado depois que o envio é validado, a duplicidade é
+    verificada, o consentimento é registrado e — quando o lead é novo — o módulo já chamou a
+    API do CRM (`POST /api/crm/empresas` e `/contatos`, com token de serviço, tratando o 409
+    de duplicidade) para criar ou reaproveitar a empresa e o contato. O evento é só o aviso:
+    ele não cria nada em outro módulo (Contrato de Integração §12.7 e §9.7).
+defaultContentType: application/json
+
+servers:
+  desenvolvimento:
+    host: localhost:5672
+    protocol: amqp
+    protocolVersion: 0.9.1
+    description: RabbitMQ do infra-integrador-2026, vhost `plataforma`
+
+channels:
+  eventos:
+    address: landing.eventos
+    messages:
+      formularioRecebido:
+        $ref: '#/components/messages/FormularioRecebido'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: landing.eventos
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: plataforma
+        bindingVersion: 0.3.0
+
+operations:
+  publicarFormularioRecebido:
+    action: send
+    summary: Um formulário foi enviado e o lead foi processado
+    channel:
+      $ref: '#/channels/eventos'
+    messages:
+      - $ref: '#/channels/eventos/messages/formularioRecebido'
+
+components:
+  messages:
+    FormularioRecebido:
+      name: landing.formulario.recebido
+      title: Formulário recebido
+      summary: |
+        Publicado depois do commit do envio. Quem se interessa: o Marketing (dispara a
+        automação do formulário). O CRM não consome este evento — a criação/reaproveitamento
+        de empresa e contato já aconteceu por chamada síncrona à API do CRM, antes do evento.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: landing.formulario.recebido }
+              dados:
+                type: object
+                required: [envioId, formularioId, canal]
+                properties:
+                  envioId: { type: string, format: uuid }
+                  formularioId: { type: string, format: uuid }
+                  empresaId:
+                    type: [string, 'null']
+                    format: uuid
+                    description: Preenchido quando o envio resultou em empresa criada ou reaproveitada no CRM
+                  contatoId:
+                    type: [string, 'null']
+                    format: uuid
+                    description: Preenchido quando o envio resultou em contato criado no CRM
+                  canal:
+                    type: string
+                    enum: [formulario, landing_page, embed, chatbot]
+                    description: Como o formulário foi acessado pelo visitante
+
+  schemas:
+    Envelope:
+      type: object
+      required: [id, tipo, versao, tenantId, moduloOrigem, ocorridoEm, dados]
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { type: string }
+        versao: { type: integer, minimum: 1 }
+        tenantId: { type: string, format: uuid }
+        moduloOrigem: { type: string }
+        ocorridoEm: { type: string, format: date-time }
+        usuarioId: { type: [string, 'null'], format: uuid }
+        correlacaoId: { type: [string, 'null'] }
+        dados: { type: object }

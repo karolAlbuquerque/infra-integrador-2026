@@ -47,7 +47,7 @@ Empresa B. Troque `crm` e a porta pelo seu módulo.
 ## Mensageria e testes
 
 - [ ] **15.** A suíte de testes passa sem nenhum outro módulo no ar.
-- [ ] **17.** Os eventos publicados seguem o envelope da §9.7 e estão descritos em `contratos/{modulo}.asyncapi.yaml`.
+- [ ] **17.** Os eventos publicados seguem o envelope da §9.7, levam a propriedade `user_id` = `mq_{modulo}` e estão descritos em `contratos/{modulo}.asyncapi.yaml`.
 - [ ] **18.** Todo consumidor ignora um evento já processado — testado com a mesma mensagem entregue duas vezes.
 
 O módulo de exemplo cobre os itens 2 a 6, 9, 10, 15 e 18 com testes automatizados

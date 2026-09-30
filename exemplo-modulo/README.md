@@ -22,7 +22,7 @@ renomeie e comece a escrever o seu domínio em cima.
 | Testes de 401, 403, isolamento, tenant no corpo, token de serviço e idempotência | `api/src/test` |
 | Front que recebe a sessão da casca, ajusta a altura e avisa token expirado | `front/src/plataforma/sessao.ts` |
 | Servido sob `/modulos/exemplo/`, com `frame-ancestors 'self'` | `front/vite.config.ts`, `front/nginx/` |
-| Tema da plataforma com Tailwind v4 e tokens do shadcn/ui | `front/src/tema/plataforma.css` |
+| Tema da plataforma (design system da Centinela) com Tailwind v4 | `front/src/tema/plataforma.css` |
 
 ## Rodar junto com a infraestrutura
 

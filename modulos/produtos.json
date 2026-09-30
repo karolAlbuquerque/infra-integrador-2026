@@ -1,0 +1,18 @@
+{
+  "codigo": "produtos",
+  "nome": "Produtos e Serviços",
+  "grupo": "Grupo 1 — Frederico",
+  "icone": "box",
+  "urlFrontend": "/modulos/produtos/",
+  "prefixoApi": "/api/produtos",
+  "permissaoMenu": "produtos.acessar",
+  "ordemMenu": 30,
+  "healthcheck": "/api/produtos/health",
+  "itensSubmenu": [
+    {
+      "rota": "/itens",
+      "nome": "Catálogo",
+      "permissao": "produtos.item.ver"
+    }
+  ]
+}

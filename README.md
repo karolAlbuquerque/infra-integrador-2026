@@ -4,8 +4,9 @@ O que é de todos os oito grupos do Projeto Integrador 2026: o ambiente que sobe
 inteiro, o banco e o broker já configurados, os contratos entre módulos, o tema visual e um
 módulo de exemplo para copiar.
 
-Mantido pelo Grupo 2 — Plataforma e Controle de Usuários. As regras vêm do **Contrato de
-Integração dos Módulos v0.6**; este repositório é a forma executável delas.
+Mantido pelo Grupo 2 — Plataforma e Controle de Usuários. As regras vêm do
+**[Contrato de Integração dos Módulos](docs/contrato-de-integracao.md)**; este repositório é
+a forma executável delas.
 
 ## O que tem aqui
 
@@ -19,7 +20,7 @@ Integração dos Módulos v0.6**; este repositório é a forma executável delas
 | `modulos/` | Registro de cada módulo no menu da casca | Cada grupo, por PR |
 | `ui/` | Tema Tailwind v4 + shadcn/ui da plataforma | Grupo 2 |
 | `exemplo-modulo/` | Back-end e front de um módulo pronto, para copiar | Grupo 2 |
-| `docs/` | Usuários de teste e checklist de conformidade | Grupo 2 |
+| `docs/` | Contrato de Integração, Mapa de Fronteiras, diagramas C4, usuários de teste e checklist de conformidade | Grupo 2; o Contrato e o Mapa mudam por PR, com prazo de objeção para os gestores |
 | `.github/workflows/` | Validação deste repositório e workflow reutilizável de publicação de imagem | Grupo 2 |
 
 ## Subir o ambiente
@@ -81,8 +82,13 @@ O `docker-compose.yml` entrega a todo back-end de módulo as mesmas variáveis. 
 | `JWKS_URI` | `http://identity:8081/api/identity/.well-known/jwks.json` | Validar o token |
 | `IDENTITY_BASE_URL` | `http://identity:8081` | Pedir token de serviço |
 | `SVC_CLIENT_ID` / `SVC_CLIENT_SECRET` | `crm` | Credencial do token de serviço |
+| `LOGGING_STRUCTURED_FORMAT_CONSOLE` | `ecs` | Log em JSON, com o `requestId` do MDC (vem de `LOG_FORMATO`) |
 
 O front recebe só `PORTA`.
+
+Toda mensagem publicada no RabbitMQ leva a propriedade `user_id` com o `RABBITMQ_USER` — sem ela, o
+identity recusa os pedidos de timeline, notificação e e-mail (Contrato §9.7). O exemplo faz isso num
+`RabbitTemplateCustomizer`.
 
 ## Como o seu grupo entra
 
@@ -107,11 +113,27 @@ Enquanto o identity não estiver publicado, desenvolva contra os contratos com o
 | Migrations com o dono, aplicação sem poder alterar estrutura (§7.1) | `own_{modulo}` e `usr_{modulo}` |
 | Leitura cruzada só por *view* pública (§9.8) | `GRANT SELECT` só na *view*, feito pela migration do dono |
 | Cada módulo publica só na própria exchange (§9.7) | Permissões do `mq_{modulo}` no RabbitMQ |
+| Ninguém pede nada à plataforma em nome de outro módulo (§9.7) | `user_id` conferido pelo RabbitMQ e pelo identity |
 | Contratos e registros no formato certo | Workflow `Validar` em todo pull request |
 
 ## Documentos
 
-- Contrato de Integração dos Módulos v0.6
+- [Contrato de Integração dos Módulos](docs/contrato-de-integracao.md) — as regras que todo
+  módulo segue
+- [Mapa de Fronteiras](docs/mapa-de-fronteiras.md) — o que é de cada grupo, o que é
+  compartilhado e o que ainda não tem dono
+- [Diagramas C4](docs/c4-contexto-e-conteineres.md) — contexto, contêineres e componentes do
+  identity, em Mermaid, para o desenho mudar junto com o contrato
+- [Manual de implantação](docs/manual-de-implantacao.md) — ambientes, variáveis, subida só com
+  imagens publicadas, logs, métricas e cópia de segurança
+
+Estes dois arquivos são a versão oficial, mantida pelo Grupo 2. Qualquer mudança entra por
+*pull request*, anunciado no grupo de gestores com um prazo para objeções: quem discorda
+comenta no PR; sem objeção até o prazo, o Grupo 2 faz o merge e a versão passa a valer
+(Contrato §13.2). O histórico do Git mostra o que mudou em cada versão.
+
+Documentos do Grupo 2, sobre a própria plataforma:
+
 - Requisitos da Plataforma e do Controle de Usuários v0.2
 - Modelo de Dados da Plataforma v0.2
 - Repositório da plataforma: [plataforma-integrador-2026-2](https://github.com/karolAlbuquerque/plataforma-integrador-2026-2)

@@ -8,8 +8,9 @@
   "permissaoMenu": "crm.acessar",
   "ordemMenu": 20,
   "healthcheck": "/api/crm/health",
+  "busca": true,
   "itensSubmenu": [
-    { "rota": "/empresas", "nome": "Empresas", "permissao": "crm.empresa.ver_resumo" },
+    { "rota": "/empresas", "nome": "Empresas", "permissao": "crm.empresa.ver" },
     { "rota": "/contatos", "nome": "Contatos", "permissao": "crm.contato.ver" },
     { "rota": "/funil", "nome": "Funil de Vendas", "permissao": "crm.oportunidade.ver" },
     { "rota": "/oportunidades", "nome": "Oportunidades", "permissao": "crm.oportunidade.ver" },

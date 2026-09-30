@@ -1,0 +1,318 @@
+openapi: 3.1.0
+info:
+  title: Marketing e Automações de Marketing
+  version: 0.2.0
+  summary: Contrato do módulo Marketing — o que a casca e os outros módulos consomem.
+  description: |
+    Endpoints do módulo `marketing` (Grupo 4) usados fora dele, conforme o Contrato de
+    Integração §14.1. Endpoints usados só pelo front do próprio módulo (painel, configurações,
+    qualificação, modelos de mensagem, ciclo de vida) não entram aqui (`contratos/README.md` do infra).
+
+    Nesta versão: saúde do serviço (§8.5), busca global da casca (§8.6), definição do
+    formulário lida pelo Landing e resumo do lead para os módulos interessados.
+    Rotas públicas (`/public/marketing/**`) não são consumidas por outros módulos e ficam
+    documentadas no documento norteador do grupo.
+  license:
+    name: Uso acadêmico — Projeto Integrador 2026
+    identifier: LicenseRef-Academico
+servers:
+  - url: http://localhost:8080
+    description: Pelo gateway
+  - url: http://marketing:8087
+    description: Direto, entre serviços
+tags:
+  - name: busca
+    description: Busca global da casca
+  - name: formulario
+    description: Definição dos campos do formulário da landing page, lida pelo Landing
+  - name: lead
+    description: Informações de lead disponibilizadas para outros módulos
+  - name: saude
+    description: Estado do serviço
+
+security:
+  - bearerJwt: []
+
+paths:
+  /api/marketing/busca:
+    get:
+      tags: [busca]
+      operationId: buscarLeads
+      summary: Busca textual de leads, para a busca global da casca
+      description: |
+        Exige `marketing.lead.ver`. Procura por nome e e-mail entre os leads do tenant do token.
+        Devolve no máximo 5 resultados, sem paginação, no formato único do Contrato de
+        Integração §8.6. `rota` é relativa ao `urlFrontend` do módulo. Leads anonimizados não
+        aparecem.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 100 }
+          example: maria
+      responses:
+        '200':
+          description: Resultados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        maxItems: 5
+                        items: { $ref: '#/components/schemas/ResultadoBusca' }
+              example:
+                success: true
+                data:
+                  - id: 9f1c4e2a-3b5d-4c7e-8f9a-1b2c3d4e5f6a
+                    titulo: Maria Souza
+                    subtitulo: Etapa 2 · landing_page
+                    rota: /leads/9f1c4e2a-3b5d-4c7e-8f9a-1b2c3d4e5f6a
+                message: null
+                errors: []
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/marketing/formularios/{id}:
+    get:
+      tags: [formulario]
+      operationId: obterFormularioAtivo
+      summary: Versão ativa de um formulário de captação
+      description: |
+        Exige `marketing.formulario.ver`, que declara `servicos: [landing]`: o Landing chama com
+        token de serviço e `X-Tenant-Id`, direto em `http://marketing:8087`. Devolve sempre a
+        versão ativa. Uma versão publicada não muda; cada publicação gera uma versão nova e o
+        evento `marketing.formulario.publicado`. Formulário nunca publicado responde 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Versão ativa
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/FormularioVersao' }
+              example:
+                success: true
+                data:
+                  id: 9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+                  nome: Consultoria — Black Friday
+                  versao: 3
+                  publicadoEm: '2026-09-20T18:00:00Z'
+                  campos:
+                    - { id: a1b2c3d4-0000-4000-8000-000000000001, chave: nome, label: Nome, tipo: texto, obrigatorio: true, fixo: true, ordem: 1, opcoes: null }
+                    - { id: c1a2b3c4-0000-4000-8000-000000000005, chave: cargo, label: 'Qual o seu cargo?', tipo: lista, obrigatorio: true, fixo: false, ordem: 5, opcoes: [Decisor, Sócio, Gerente, Analista, Operacional, Outros] }
+                message: null
+                errors: []
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/marketing/leads/resumo:
+    get:
+      tags: [lead]
+      operationId: obterResumosLead
+      summary: Resumo de vários leads de uma vez
+      description: Exige `marketing.lead.ver_resumo`. Máximo 100 ids por chamada (Contrato §9.4).
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          schema: { type: array, items: { type: string, format: uuid }, maxItems: 100 }
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: Resumos encontrados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ResumoLead' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/marketing/leads/{id}/resumo:
+    get:
+      tags: [lead]
+      operationId: obterResumoLead
+      summary: Resumo de um lead para outros módulos
+      description: |
+        Exige `marketing.lead.ver_resumo`. Origem, etapa, qualificação e vendedor do lead, sem
+        dado pessoal (e-mail, telefone e respostas ficam no detalhe, com `marketing.lead.ver`).
+        Lead de outro tenant responde 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Resumo
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/ResumoLead' }
+              example:
+                success: true
+                data:
+                  id: 9f1c4e2a-3b5d-4c7e-8f9a-1b2c3d4e5f6a
+                  etapa: 3
+                  temperatura: quente
+                  faixaQualificacao: mql_quente
+                  pontuacao: 85
+                  origem: landing_page
+                  utmCampaign: black-friday-2026
+                  vendedorId: 2d4f6a8c-1e3b-4d5f-9a7c-0b2d4f6a8c1e
+                  crmOportunidadeId: 4a6c8e0b-2d4f-4a6c-8e0b-2d4f6a8c0e2b
+                message: null
+                errors: []
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/marketing/health:
+    get:
+      tags: [saude]
+      operationId: saude
+      summary: Serviço de pé e conectado ao banco
+      security: []
+      responses:
+        '200':
+          description: Disponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+              example: { success: true, data: { status: UP }, message: null, errors: [] }
+        '503':
+          description: Banco indisponível
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+
+components:
+  securitySchemes:
+    bearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    DadosInvalidos:
+      description: Dado inválido
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example:
+            success: false
+            data: null
+            message: Informe pelo menos 2 caracteres para buscar.
+            errors:
+              - { campo: q, codigo: CAMPO_INVALIDO, detalhe: A busca exige pelo menos 2 caracteres. }
+    NaoAutenticado:
+      description: Sem token, token inválido ou expirado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    SemPermissao:
+      description: Sem a permissão exigida
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    NaoEncontrado:
+      description: Não existe no tenant do token (inclui registro de outro tenant, §8.4)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [success, data, message, errors]
+      properties:
+        success: { type: boolean }
+        data: {}
+        message: { type: [string, 'null'] }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [campo, codigo, detalhe]
+            properties:
+              campo: { type: string }
+              codigo: { type: string }
+              detalhe: { type: string }
+
+    ResultadoBusca:
+      type: object
+      required: [id, titulo, subtitulo, rota]
+      description: Formato único de busca global do sistema (Contrato §8.6).
+      properties:
+        id: { type: string, format: uuid }
+        titulo: { type: string, description: 'Nome do lead, ou o e-mail quando não há nome' }
+        subtitulo: { type: string, description: Etapa e origem do lead; string vazia quando não há etapa }
+        rota: { type: string, description: Relativa ao urlFrontend do módulo }
+
+    FormularioVersao:
+      type: object
+      required: [id, nome, versao, publicadoEm, campos]
+      properties:
+        id: { type: string, format: uuid, description: 'É o formularioId dos eventos do Landing' }
+        nome: { type: string }
+        versao: { type: integer, minimum: 1, description: 'É o formularioVersao dos eventos do Landing' }
+        publicadoEm: { type: string, format: date-time }
+        campos:
+          type: array
+          items: { $ref: '#/components/schemas/Campo' }
+
+    Campo:
+      type: object
+      required: [id, chave, label, tipo, obrigatorio, fixo, ordem]
+      properties:
+        id: { type: string, format: uuid, description: 'É o campoId das respostas no Landing' }
+        chave:
+          type: string
+          pattern: '^[a-z][a-z0-9_]*$'
+          description: Estável entre versões e formulários do tenant; usada na pontuação do lead
+        label: { type: string }
+        tipo:
+          type: string
+          enum: [texto, email, telefone, whatsapp, cnpj, cpf, lista, checkbox, radio, textarea, data]
+        obrigatorio: { type: boolean }
+        fixo: { type: boolean, description: 'true em nome, email, telefone e consentimento' }
+        ordem: { type: integer, minimum: 1 }
+        opcoes:
+          type: [array, 'null']
+          items: { type: string }
+          description: Obrigatório só quando tipo = lista, radio ou checkbox
+
+    ResumoLead:
+      type: object
+      required: [id, etapa, temperatura, origem]
+      properties:
+        id: { type: string, format: uuid }
+        etapa: { type: integer, minimum: 0, maximum: 3 }
+        temperatura: { type: string, enum: [frio, medio, quente] }
+        faixaQualificacao: { type: [string, 'null'], enum: [mql_quente, mql_morno, nutricao, null] }
+        pontuacao: { type: [integer, 'null'] }
+        origem: { type: string, enum: [meta_ads, landing_page, manual] }
+        utmCampaign: { type: [string, 'null'] }
+        vendedorId: { type: [string, 'null'], format: uuid }
+        crmOportunidadeId: { type: [string, 'null'], format: uuid }

@@ -1,0 +1,91 @@
+asyncapi: 3.0.0
+info:
+  title: Marketing e Automações — eventos publicados
+  version: 0.1.0
+  description: |
+    Eventos que o módulo Marketing (Grupo 4) publica na exchange `marketing.eventos`
+    (Contrato de Integração §9.7). Publicado antes da implementação, conforme §14.1.
+
+    Nesta versão: apenas `marketing.formulario.publicado`, disparado após o commit da publicação
+    de uma nova versão ativa de formulário de captação (Etapa 2, §9.5). Consumido pelo módulo
+    Landing (Grupo 7) para atualizar os campos do formulário na página.
+    Demais eventos (`marketing.lead.qualificado`, `marketing.lead.atribuido`, `marketing.lead.descadastrado`)
+    entrarão quando os consumidores confirmarem interesse.
+defaultContentType: application/json
+
+servers:
+  desenvolvimento:
+    host: localhost:5672
+    protocol: amqp
+    protocolVersion: 0.9.1
+    description: RabbitMQ do infra-integrador-2026, vhost `plataforma`
+
+channels:
+  eventos:
+    address: marketing.eventos
+    messages:
+      formularioPublicado:
+        $ref: '#/components/messages/FormularioPublicado'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: marketing.eventos
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: plataforma
+        bindingVersion: 0.3.0
+
+operations:
+  publicarFormularioPublicado:
+    action: send
+    summary: Nova versão ativa de formulário de captação publicada
+    channel:
+      $ref: '#/channels/eventos'
+    messages:
+      - $ref: '#/channels/eventos/messages/formularioPublicado'
+
+components:
+  messages:
+    FormularioPublicado:
+      name: marketing.formulario.publicado
+      title: Formulário publicado
+      summary: Publicado depois do commit da publicação de nova versão do formulário.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: marketing.formulario.publicado }
+              dados:
+                type: object
+                required: [formularioId, versao, publicadoEm]
+                properties:
+                  formularioId:
+                    type: string
+                    format: uuid
+                    description: Identificador único do formulário
+                  versao:
+                    type: integer
+                    minimum: 1
+                    description: Número da versão publicada ativa
+                  publicadoEm:
+                    type: string
+                    format: date-time
+                    description: Data e hora da publicação em UTC
+
+  schemas:
+    Envelope:
+      type: object
+      required: [id, tipo, versao, tenantId, moduloOrigem, ocorridoEm, dados]
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { type: string }
+        versao: { type: integer, minimum: 1 }
+        tenantId: { type: string, format: uuid }
+        moduloOrigem: { type: string, const: marketing }
+        ocorridoEm: { type: string, format: date-time }
+        usuarioId: { type: [string, 'null'], format: uuid }
+        correlacaoId: { type: [string, 'null'] }
+        dados: { type: object }

@@ -16,10 +16,15 @@ permissoes:
   - codigo: crm.empresa.criar
     descricao: Criar empresa
     perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR, PRE_VENDAS]
+    servicos: [landing]
 
   - codigo: crm.empresa.editar
     descricao: Editar empresa — único módulo autorizado a editar (Contrato §10.2)
     perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR]
+
+  - codigo: crm.contato.ver_resumo
+    descricao: Ver nome, cargo, e-mail e telefone do contato — permissão fraca, padrão de todo perfil operacional
+    perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR, PRE_VENDAS, FINANCEIRO, TECNICO, MARKETING, CONTABILIDADE]
 
   - codigo: crm.contato.ver
     descricao: Ver contatos de uma empresa
@@ -28,6 +33,7 @@ permissoes:
   - codigo: crm.contato.criar
     descricao: Criar contato
     perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR, PRE_VENDAS]
+    servicos: [landing]
 
   - codigo: crm.contato.editar
     descricao: Editar contato
@@ -42,12 +48,17 @@ permissoes:
     perfisPadrao: [ADMINISTRADOR, GESTOR]
 
   - codigo: crm.oportunidade.ver
-    descricao: Ver oportunidades
+    descricao: Ver as próprias oportunidades, as das suas equipes e as ainda sem responsável
     perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR, PRE_VENDAS]
+
+  - codigo: crm.oportunidade.ver_todas
+    descricao: Ver todas as oportunidades do tenant, sem o recorte por dono e equipe (Contrato §5.3)
+    perfisPadrao: [ADMINISTRADOR]
 
   - codigo: crm.oportunidade.criar
     descricao: Criar oportunidade
     perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR, PRE_VENDAS]
+    servicos: [landing]
 
   - codigo: crm.oportunidade.editar
     descricao: Editar oportunidade, incluindo mudança de etapa
@@ -61,22 +72,6 @@ permissoes:
     descricao: Ver lista de prospecção
     perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR, PRE_VENDAS]
 
-  - codigo: crm.proposta.ver
-    descricao: Ver propostas
-    perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR]
-
-  - codigo: crm.proposta.criar
-    descricao: Criar proposta a partir de um template
-    perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR]
-
-  - codigo: crm.proposta.editar
-    descricao: Editar proposta
-    perfisPadrao: [ADMINISTRADOR, GESTOR, VENDEDOR]
-
-  - codigo: crm.template.administrar
-    descricao: Criar e editar templates de proposta
-    perfisPadrao: [ADMINISTRADOR, GESTOR]
-
   - codigo: crm.relatorio.exportar
-    descricao: Exportar relatórios comerciais em PDF, XLSX ou CSV
+    descricao: Exportar os dashboards comerciais do próprio CRM em PDF, XLSX ou CSV — não é o motor de relatórios do Grupo 3 (Mapa de Fronteiras §5)
     perfisPadrao: [ADMINISTRADOR, GESTOR]

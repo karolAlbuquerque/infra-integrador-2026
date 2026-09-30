@@ -37,6 +37,15 @@
               "enum": ["ADMINISTRADOR", "GESTOR", "VENDEDOR", "PRE_VENDAS", "FINANCEIRO",
                        "TECNICO", "CONTABILIDADE", "MARKETING", "PARCEIRO", "CLIENTE"]
             }
+          },
+          "servicos": {
+            "type": "array",
+            "description": "Módulos cujo token de serviço (clientId) recebe esta permissão (Contrato §9.2)",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z]+$"
+            }
           }
         }
       }

@@ -1,0 +1,125 @@
+asyncapi: 3.0.0
+info:
+  title: CRM — eventos publicados
+  version: 0.1.0
+  description: |
+    Eventos que o CRM publica na exchange `crm.eventos`, sempre depois do commit da
+    transação (Contrato §9.7). Quem consome cria a própria fila e a liga a esta exchange
+    pela routing key, que é igual ao campo `tipo`.
+
+    - `crm.oportunidade.criada`: o Marketing dispara a automação de lead novo (§12.7).
+    - `crm.oportunidade.ganha`: Contratos gera proposta e contrato; Financeiro prepara a
+      cobrança. Os valores seguem o que estava na oportunidade no momento do ganho.
+defaultContentType: application/json
+
+servers:
+  desenvolvimento:
+    host: localhost:5672
+    protocol: amqp
+    protocolVersion: 0.9.1
+    description: RabbitMQ do infra-integrador-2026, vhost `plataforma`
+
+channels:
+  eventos:
+    address: crm.eventos
+    messages:
+      oportunidadeCriada:
+        $ref: '#/components/messages/OportunidadeCriada'
+      oportunidadeGanha:
+        $ref: '#/components/messages/OportunidadeGanha'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: crm.eventos
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: plataforma
+        bindingVersion: 0.3.0
+
+operations:
+  publicarOportunidadeCriada:
+    action: send
+    summary: Uma oportunidade foi criada, por usuário ou pela landing
+    channel:
+      $ref: '#/channels/eventos'
+    messages:
+      - $ref: '#/channels/eventos/messages/oportunidadeCriada'
+  publicarOportunidadeGanha:
+    action: send
+    summary: Uma oportunidade foi marcada como ganha
+    channel:
+      $ref: '#/channels/eventos'
+    messages:
+      - $ref: '#/channels/eventos/messages/oportunidadeGanha'
+
+components:
+  messages:
+    OportunidadeCriada:
+      name: crm.oportunidade.criada
+      title: Oportunidade criada
+      summary: Publicado depois do commit da criação.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: crm.oportunidade.criada }
+              dados:
+                type: object
+                required: [oportunidadeId, titulo, empresaId, funilId, etapaId, tipo]
+                properties:
+                  oportunidadeId: { type: string, format: uuid }
+                  titulo: { type: string }
+                  empresaId: { type: string, format: uuid }
+                  contatoId: { type: [string, 'null'], format: uuid }
+                  funilId: { type: string, format: uuid }
+                  etapaId: { type: string, format: uuid }
+                  tipo: { type: string, enum: [nova, upsell, cross_sell] }
+                  responsavelId: { type: [string, 'null'], format: uuid }
+                  valorImplantacao: { type: [number, 'null'] }
+                  valorMrr: { type: [number, 'null'] }
+                  origem: { type: [string, 'null'], example: landing }
+                  origemModuloId: { type: [string, 'null'], example: form-abc123 }
+
+    OportunidadeGanha:
+      name: crm.oportunidade.ganha
+      title: Oportunidade ganha
+      summary: Publicado depois do commit do ganho. É o gatilho para Contratos e Financeiro.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo: { const: crm.oportunidade.ganha }
+              dados:
+                type: object
+                required: [oportunidadeId, titulo, empresaId, tipo, fechadaEm]
+                properties:
+                  oportunidadeId: { type: string, format: uuid }
+                  titulo: { type: string }
+                  empresaId: { type: string, format: uuid, description: 'Dados completos em GET /api/crm/empresas/{id}' }
+                  contatoId: { type: [string, 'null'], format: uuid }
+                  unidadeId: { type: [string, 'null'], format: uuid }
+                  produtoId: { type: [string, 'null'], format: uuid, description: Produto do Grupo 1 }
+                  tipo: { type: string, enum: [nova, upsell, cross_sell] }
+                  valorImplantacao: { type: [number, 'null'] }
+                  valorMrr: { type: [number, 'null'] }
+                  responsavelId: { type: [string, 'null'], format: uuid }
+                  fechadaEm: { type: string, format: date-time }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [id, tipo, versao, tenantId, moduloOrigem, ocorridoEm, dados]
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { type: string }
+        versao: { type: integer, minimum: 1 }
+        tenantId: { type: string, format: uuid }
+        moduloOrigem: { type: string, const: crm }
+        ocorridoEm: { type: string, format: date-time }
+        usuarioId: { type: [string, 'null'], format: uuid }
+        correlacaoId: { type: [string, 'null'] }
+        dados: { type: object }
