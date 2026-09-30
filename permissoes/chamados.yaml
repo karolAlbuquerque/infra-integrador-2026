@@ -8,7 +8,7 @@ permissoes:
     descricao: Ver o módulo de chamados no menu
     perfisPadrao: [ADMINISTRADOR, GESTOR, TECNICO]
   - codigo: chamados.chamado.ver
-    descricao: Consultar chamados, interações, apontamentos e relatórios técnicos
+    descricao: Consultar chamados, interações e apontamentos
     perfisPadrao: [ADMINISTRADOR, GESTOR, TECNICO]
   - codigo: chamados.chamado.criar
     descricao: Abrir e reabrir chamados
@@ -25,8 +25,11 @@ permissoes:
   - codigo: chamados.chamado.excluir
     descricao: Excluir chamados
     perfisPadrao: [ADMINISTRADOR]
-  - codigo: chamados.chamado.exportar
-    descricao: Exportar relatórios técnicos
+  - codigo: chamados.relatorio.ver
+    descricao: Consultar os relatórios técnicos, sem precisar ver cada chamado
+    perfisPadrao: [ADMINISTRADOR, GESTOR, TECNICO]
+  - codigo: chamados.relatorio.exportar
+    descricao: Exportar os relatórios técnicos em PDF, XLSX ou CSV
     perfisPadrao: [ADMINISTRADOR, GESTOR]
   - codigo: chamados.empresa.ver_resumo
     descricao: Ver o status técnico de uma empresa na ficha do CRM

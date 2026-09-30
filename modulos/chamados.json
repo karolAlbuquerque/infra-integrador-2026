@@ -8,9 +8,10 @@
   "permissaoMenu": "chamados.acessar",
   "ordemMenu": 60,
   "healthcheck": "/api/chamados/health",
+  "busca": true,
   "itensSubmenu": [
     { "rota": "/", "nome": "Fila de chamados", "permissao": "chamados.chamado.ver" },
-    { "rota": "/relatorios", "nome": "Relatórios", "permissao": "chamados.chamado.ver" },
+    { "rota": "/relatorios", "nome": "Relatórios", "permissao": "chamados.relatorio.ver" },
     { "rota": "/configuracoes", "nome": "Categorias e SLA", "permissao": "chamados.configuracao.administrar" }
   ]
 }

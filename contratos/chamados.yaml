@@ -7,6 +7,10 @@ info:
     Endpoints do módulo `chamados`. Abertura e ciclo de vida de chamados técnicos (internos e de cliente),
     controle de SLA com pausa, interações, apontamentos de horas e os relatórios técnicos.
     Publicado antes da implementação, conforme §14.1 do Contrato de Integração.
+
+    **Eventos (checklist, item 17):** nesta versão o módulo não publica eventos no RabbitMQ nem
+    mensagens em `identity.entrada`. Quando passar a publicar, descreve antes em
+    `contratos/chamados.asyncapi.yaml`.
   license:
     name: Uso acadêmico — Projeto Integrador 2026
     identifier: LicenseRef-Academico
@@ -116,8 +120,9 @@ paths:
       operationId: criarChamado
       summary: Abrir chamado
       description: |
-        Exige `chamados.chamado.criar`. O prazo de SLA é calculado e congelado neste momento, a partir da
-        política vinculada ao contrato ou, na ausência dela, da política padrão.
+        Exige `chamados.chamado.criar`. Os três prazos de SLA são calculados e congelados neste momento, a
+        partir do prazo da prioridade do chamado na política vinculada ao contrato ou, na ausência dela, na
+        política padrão. Editar a política depois não mexe neles.
       requestBody:
         required: true
         content:
@@ -170,7 +175,14 @@ paths:
       tags: [chamados]
       operationId: editarChamado
       summary: Editar campos do chamado
-      description: Exige `chamados.chamado.editar`. Não altera status.
+      description: |
+        Exige `chamados.chamado.editar`. Não altera status nem técnico — o técnico muda só por `atribuir`,
+        que deixa o registro no histórico de transições.
+
+        **Mudar `prioridade` ou `contratoId` recalcula os prazos de SLA** com a política que vale para a
+        nova combinação, contados desde `criadoEm` e descontadas as pausas. A regra de congelamento protege o
+        chamado de mudanças na política, não de uma reclassificação do próprio chamado. Prazo já cumprido
+        (primeira resposta dada, atendimento iniciado) não é recalculado.
       requestBody:
         required: true
         content:
@@ -215,10 +227,18 @@ paths:
     post:
       tags: [ciclo-de-vida]
       operationId: atribuirChamado
-      summary: Designar técnico e colocar em atendimento
+      summary: Designar ou trocar o técnico responsável
       description: |
-        Exige `chamados.chamado.atribuir`. De `novo` ou `reaberto`, leva a `em_atendimento`.
-        Qualquer outro estado de origem responde 409.
+        Exige `chamados.chamado.atribuir`.
+
+        - De `novo`, `reaberto` ou `escalado`, leva a `em_atendimento` com o técnico informado. De
+          `escalado` é assim que o chamado passa ao técnico do outro nível. A primeira atribuição marca
+          `atendimentoIniciadoEm`.
+        - De `em_atendimento`, `aguardando_cliente` ou `aguardando_fornecedor`, **reatribui**: troca o
+          técnico e mantém o status. Numa espera, o relógio continua pausado.
+        - De `resolvido` ou `fechado`, responde 409.
+
+        Toda atribuição, inclusive a reatribuição, entra no histórico de transições.
       requestBody:
         required: true
         content:
@@ -252,8 +272,8 @@ paths:
       operationId: aguardarCliente
       summary: Marcar espera pelo solicitante
       description: |
-        Exige `chamados.chamado.editar`. Só de `em_atendimento`. **Pausa o relógio do SLA** — a espera não
-        é responsabilidade da equipe.
+        Exige `chamados.chamado.editar`. De `em_atendimento` ou `escalado`. **Pausa o relógio do SLA** — a
+        espera não é responsabilidade da equipe.
       requestBody:
         required: true
         content:
@@ -287,7 +307,8 @@ paths:
       operationId: aguardarFornecedor
       summary: Marcar espera por terceiro
       description: |
-        Exige `chamados.chamado.editar`. Só de `em_atendimento`. **Pausa o relógio do SLA.**
+        Exige `chamados.chamado.editar`. De `em_atendimento` ou `escalado` — o caso típico é o nível 2
+        esperando o fabricante. **Pausa o relógio do SLA.**
       requestBody:
         required: true
         content:
@@ -321,8 +342,9 @@ paths:
       operationId: retomarChamado
       summary: Voltar de uma espera para atendimento
       description: |
-        Exige `chamados.chamado.editar`. De `aguardando_cliente` ou `aguardando_fornecedor`, leva a
-        `em_atendimento`. Os prazos de SLA são empurrados pela duração da pausa.
+        Exige `chamados.chamado.editar`. De `aguardando_cliente` ou `aguardando_fornecedor`, volta ao
+        estado de antes da espera: `em_atendimento` ou `escalado`. Os prazos de SLA são empurrados pela
+        duração da pausa.
       responses:
         '200':
           description: Chamado retomado
@@ -350,8 +372,10 @@ paths:
       operationId: escalarChamado
       summary: Escalar para outro nível de atendimento
       description: |
-        Exige `chamados.chamado.editar`. De `novo` ou `em_atendimento`. **Não pausa o relógio** — escalar
-        passa o trabalho adiante, mas o compromisso continua sendo do time.
+        Exige `chamados.chamado.editar`. Só de `em_atendimento`: um chamado que nunca teve técnico não é
+        escalado, é atribuído — se já se sabe que é caso de nível 2, atribui-se direto a um técnico dele.
+        **Não pausa o relógio** — escalar passa o trabalho adiante, mas o compromisso continua sendo do
+        time. O técnico continua o mesmo até a próxima atribuição.
       requestBody:
         required: true
         content:
@@ -452,6 +476,10 @@ paths:
         Exige `chamados.chamado.criar`. De `resolvido` ou `fechado`, leva a `reaberto` e incrementa o
         contador de reaberturas. De `fechado` não se vai direto a `em_atendimento` — senão a contagem de
         reaberturas, que é indicador de qualidade, se perde.
+
+        **O prazo de resolução continua, não recomeça.** O intervalo entre `resolvidoEm` e a reabertura
+        conta como pausa, e o relógio retoma de onde parou. Se recomeçasse, reabrir viraria um jeito de
+        zerar um SLA estourado. Os prazos de primeira resposta e de atendimento, já cumpridos, não voltam.
       requestBody:
         required: true
         content:
@@ -485,8 +513,9 @@ paths:
       operationId: listarInteracoes
       summary: Listar interações do chamado
       description: |
-        Exige `chamados.chamado.ver`. Quem não é da equipe recebe apenas as interações de visibilidade
-        `publica`.
+        Exige `chamados.chamado.ver`, que hoje só a equipe tem — por isso a lista traz as interações
+        `interna` e `publica`. `publica` marca o que pode ser mostrado ao solicitante quando houver uma
+        superfície para ele (portal do cliente, §46, ainda sem dono).
       parameters:
         - $ref: '#/components/parameters/Pagina'
         - $ref: '#/components/parameters/Tamanho'
@@ -524,6 +553,10 @@ paths:
       responses:
         '201':
           description: Interação registrada
+          headers:
+            Location:
+              description: Endereço da interação criada
+              schema: { type: string, example: /api/chamados/chamados/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d/interacoes/3f8e1c2b-9a7d-4e6f-8b5a-2c1d0e9f8a7b }
           content:
             application/json:
               schema:
@@ -532,6 +565,37 @@ paths:
                   - properties:
                       data: { $ref: '#/components/schemas/Interacao' }
         '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/chamados/{id}/interacoes/{interacaoId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+      - name: interacaoId
+        in: path
+        required: true
+        description: Identificador da interação
+        schema: { type: string, format: uuid }
+    get:
+      tags: [interacoes]
+      operationId: verInteracao
+      summary: Ver uma interação
+      description: Exige `chamados.chamado.ver`. É o endereço devolvido no `Location` de `criarInteracao`.
+      responses:
+        '200':
+          description: Interação
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Interacao' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
         '403': { $ref: '#/components/responses/SemPermissao' }
         '404': { $ref: '#/components/responses/NaoEncontrado' }
@@ -585,6 +649,10 @@ paths:
       responses:
         '201':
           description: Apontamento registrado
+          headers:
+            Location:
+              description: Endereço do apontamento criado
+              schema: { type: string, example: /api/chamados/chamados/5c2d9e1a-0f3b-4b7e-9a6d-1e2f3a4b5c6d/apontamentos/8b5a2c1d-0e9f-4a7b-9c3d-1e2f3a4b5c6d }
           content:
             application/json:
               schema:
@@ -593,6 +661,37 @@ paths:
                   - properties:
                       data: { $ref: '#/components/schemas/Apontamento' }
         '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/chamados/chamados/{id}/apontamentos/{apontamentoId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Identificador do chamado
+        schema: { type: string, format: uuid }
+      - name: apontamentoId
+        in: path
+        required: true
+        description: Identificador do apontamento
+        schema: { type: string, format: uuid }
+    get:
+      tags: [apontamentos]
+      operationId: verApontamento
+      summary: Ver um apontamento
+      description: Exige `chamados.chamado.ver`. É o endereço devolvido no `Location` de `criarApontamento`.
+      responses:
+        '200':
+          description: Apontamento
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Apontamento' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
         '403': { $ref: '#/components/responses/SemPermissao' }
         '404': { $ref: '#/components/responses/NaoEncontrado' }
@@ -760,8 +859,9 @@ paths:
       operationId: criarPoliticaSla
       summary: Criar política de SLA
       description: |
-        Exige `chamados.configuracao.administrar`. Uma linha por combinação de política e prioridade — é o
-        que permite prazos diferentes por prioridade dentro da mesma política.
+        Exige `chamados.configuracao.administrar`. A política traz um prazo para cada uma das quatro
+        prioridades em `prazos` — é o que deixa um único vínculo de contrato cobrir todas elas. Prioridade
+        repetida ou faltando responde 400.
       requestBody:
         required: true
         content:
@@ -875,6 +975,10 @@ paths:
       responses:
         '201':
           description: Vínculo criado
+          headers:
+            Location:
+              description: Endereço do vínculo criado
+              schema: { type: string, example: /api/chamados/contratos-sla/2b7c9d1e-4f6a-4b8c-9d0e-1f2a3b4c5d6e }
           content:
             application/json:
               schema:
@@ -898,6 +1002,26 @@ paths:
         required: true
         description: Identificador do contrato no módulo de Contratos
         schema: { type: string, format: uuid }
+    get:
+      tags: [cadastros]
+      operationId: verVinculoContratoSla
+      summary: Ver a política vinculada a um contrato
+      description: |
+        Exige `chamados.chamado.ver`. É o endereço devolvido no `Location` de `vincularContratoSla`. Contrato
+        sem vínculo responde 404 — os chamados dele usam a política padrão.
+      responses:
+        '200':
+          description: Vínculo
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/VinculoContratoSla' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
     delete:
       tags: [cadastros]
       operationId: desvincularContratoSla
@@ -930,6 +1054,10 @@ paths:
         Exige `chamados.empresa.ver_resumo`, permissão fraca concedida a todo perfil operacional. Sem ela,
         a ficha de empresa do CRM quebraria com 403 — é o caso descrito no §9.3 do Contrato.
         Quem chama deve aplicar timeout de 3 segundos e degradar a tela em caso de falha (§9.6).
+
+        **Sempre responde 200.** O Chamados não enxerga o schema do CRM, então um 404 só poderia significar
+        "empresa sem chamado", e a ficha o leria como erro. Empresa sem chamado — ou que nem existe —
+        volta `ok` com os contadores zerados. A regra do status está no schema `StatusTecnico`.
       responses:
         '200':
           description: Status técnico
@@ -942,7 +1070,6 @@ paths:
                       data: { $ref: '#/components/schemas/StatusTecnico' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
         '403': { $ref: '#/components/responses/SemPermissao' }
-        '404': { $ref: '#/components/responses/NaoEncontrado' }
 
   /api/chamados/empresas/status-tecnico:
     get:
@@ -951,7 +1078,8 @@ paths:
       summary: Status técnico de várias empresas
       description: |
         Exige `chamados.empresa.ver_resumo`. Existe porque uma listagem de empresas no CRM faria uma
-        chamada por linha sem ela (§9.4). Empresa sem chamado nenhum não aparece na resposta.
+        chamada por linha sem ela (§9.4). Devolve um item para cada id pedido, na ordem do pedido — empresa
+        sem chamado volta `ok` com os contadores zerados, como na consulta individual.
       parameters:
         - name: ids
           in: query
@@ -1014,7 +1142,7 @@ paths:
       tags: [relatorios]
       operationId: relatorioChamados
       summary: Chamados por status, categoria e prioridade no período
-      description: Exige `chamados.chamado.ver`.
+      description: Exige `chamados.relatorio.ver`.
       parameters:
         - $ref: '#/components/parameters/RelatorioDe'
         - $ref: '#/components/parameters/RelatorioAte'
@@ -1045,8 +1173,10 @@ paths:
       operationId: relatorioSla
       summary: Chamados dentro e fora do SLA
       description: |
-        Exige `chamados.chamado.ver`. Compara `resolvidoEm` com `venceResolucaoEm`, já descontadas as
-        pausas.
+        Exige `chamados.relatorio.ver`. Uma linha para cada um dos três prazos da §45 — `primeira_resposta`,
+        `inicio_atendimento` e `resolucao` —, comparando o momento cumprido (`primeiraRespostaEm`,
+        `atendimentoIniciadoEm`, `resolvidoEm`) com o respectivo `vence…Em`, já descontadas as pausas.
+        `valor` é o percentual dentro do prazo; `detalhe` traz `dentroSla` e `foraSla`.
       parameters:
         - $ref: '#/components/parameters/RelatorioDe'
         - $ref: '#/components/parameters/RelatorioAte'
@@ -1073,7 +1203,7 @@ paths:
       operationId: relatorioTempoResposta
       summary: Tempo médio de primeira resposta
       description: |
-        Exige `chamados.chamado.ver`. Valor em minutos, contando de `criadoEm` até `primeiraRespostaEm`,
+        Exige `chamados.relatorio.ver`. Valor em minutos, contando de `criadoEm` até `primeiraRespostaEm`,
         descontadas as pausas.
       parameters:
         - $ref: '#/components/parameters/RelatorioDe'
@@ -1101,7 +1231,7 @@ paths:
       operationId: relatorioTempoSolucao
       summary: Tempo médio de resolução
       description: |
-        Exige `chamados.chamado.ver`. Valor em minutos, de `criadoEm` até `resolvidoEm`, descontadas as
+        Exige `chamados.relatorio.ver`. Valor em minutos, de `criadoEm` até `resolvidoEm`, descontadas as
         pausas.
       parameters:
         - $ref: '#/components/parameters/RelatorioDe'
@@ -1129,7 +1259,7 @@ paths:
       operationId: relatorioHorasPorCliente
       summary: Horas trabalhadas por empresa
       description: |
-        Exige `chamados.chamado.ver`. Soma dos apontamentos, agrupada por empresa. Valor em minutos.
+        Exige `chamados.relatorio.ver`. Soma dos apontamentos, agrupada por empresa. Valor em minutos.
       parameters:
         - $ref: '#/components/parameters/RelatorioDe'
         - $ref: '#/components/parameters/RelatorioAte'
@@ -1155,7 +1285,7 @@ paths:
       operationId: relatorioChamadosPorTecnico
       summary: Volume e desempenho por técnico
       description: |
-        Exige `chamados.chamado.ver`. `detalhe` traz resolvidos, reabertos e minutos apontados.
+        Exige `chamados.relatorio.ver`. `detalhe` traz resolvidos, reabertos e minutos apontados.
       parameters:
         - $ref: '#/components/parameters/RelatorioDe'
         - $ref: '#/components/parameters/RelatorioAte'
@@ -1181,7 +1311,7 @@ paths:
       operationId: relatorioProblemasRecorrentes
       summary: Categorias com maior reincidência
       description: |
-        Exige `chamados.chamado.ver`. Agrupa por categoria e empresa, destacando reaberturas — é o que
+        Exige `chamados.relatorio.ver`. Agrupa por categoria e empresa, destacando reaberturas — é o que
         identifica problema tratado como incidente quando deveria ser tratado como causa.
       parameters:
         - $ref: '#/components/parameters/RelatorioDe'
@@ -1203,6 +1333,64 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/LinhaRelatorio' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/chamados/relatorios/{relatorio}/exportar:
+    parameters:
+      - name: relatorio
+        in: path
+        required: true
+        description: Qual dos relatórios técnicos exportar — o mesmo nome da rota de consulta
+        schema:
+          type: string
+          enum: [chamados, sla, tempo-resposta, tempo-solucao, horas-por-cliente, chamados-por-tecnico, problemas-recorrentes]
+    get:
+      tags: [relatorios]
+      operationId: exportarRelatorio
+      summary: Exportar um relatório técnico em PDF, XLSX ou CSV
+      description: |
+        Exige `chamados.relatorio.exportar`. Exceção do envelope prevista no §8.2 do Contrato: o sucesso é o
+        próprio arquivo, com `Content-Type` e `Content-Disposition`; os erros continuam no envelope.
+
+        Aceita os mesmos filtros da rota de consulta do relatório. Filtro que aquele relatório não usa
+        responde 400 — ignorá-lo em silêncio geraria um arquivo diferente do que o usuário pediu.
+
+        O front chama com `fetch`, com o token no cabeçalho, e salva o `blob`. O token nunca vai na URL.
+      parameters:
+        - name: formato
+          in: query
+          required: true
+          description: Formato do arquivo
+          schema: { type: string, enum: [pdf, xlsx, csv] }
+        - $ref: '#/components/parameters/RelatorioDe'
+        - $ref: '#/components/parameters/RelatorioAte'
+        - $ref: '#/components/parameters/RelatorioEmpresaId'
+        - $ref: '#/components/parameters/RelatorioTecnicoId'
+        - $ref: '#/components/parameters/RelatorioCategoriaId'
+        - name: agruparPor
+          in: query
+          description: Só no relatório `chamados`
+          schema: { type: string, enum: [status, categoria, prioridade, empresa], default: status }
+        - name: minimoOcorrencias
+          in: query
+          description: Só no relatório `problemas-recorrentes`
+          schema: { type: integer, minimum: 2, default: 3 }
+      responses:
+        '200':
+          description: O arquivo, fora do envelope
+          headers:
+            Content-Disposition:
+              description: Nome sugerido do arquivo
+              schema: { type: string, example: 'attachment; filename="sla-2026-09.xlsx"' }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+            text/csv:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
         '403': { $ref: '#/components/responses/SemPermissao' }
 
@@ -1309,7 +1497,7 @@ components:
             data: null
             message: Não é possível fechar um chamado que ainda não foi resolvido.
             errors:
-              - { campo: status, codigo: TRANSICAO_INVALIDA, detalhe: 'De novo só se vai para em_atendimento ou escalado.' }
+              - { campo: status, codigo: TRANSICAO_INVALIDA, detalhe: 'De resolvido só se vai para fechado ou reaberto.' }
 
   schemas:
     Envelope:
@@ -1401,18 +1589,26 @@ components:
         politicaSlaId: { type: [string, 'null'], format: uuid }
         prazoPrimeiraRespostaMinutos:
           type: [integer, 'null']
-          description: Congelado na abertura. Não muda se a política mudar depois.
+          description: |
+            Congelado na abertura. Não muda se a política mudar depois; muda só se o próprio chamado mudar de
+            prioridade ou de contrato (ver `editarChamado`).
           example: 60
+        prazoInicioAtendimentoMinutos: { type: [integer, 'null'], example: 120 }
         prazoResolucaoMinutos: { type: [integer, 'null'], example: 480 }
         vencePrimeiraRespostaEm:
           type: [string, 'null']
           format: date-time
           description: Empurrado a cada retomada, pelo tempo que o chamado ficou pausado.
+        venceInicioAtendimentoEm: { type: [string, 'null'], format: date-time }
         venceResolucaoEm: { type: [string, 'null'], format: date-time }
         primeiraRespostaEm:
           type: [string, 'null']
           format: date-time
           description: Primeira interação pública de um técnico. Nota interna não conta.
+        atendimentoIniciadoEm:
+          type: [string, 'null']
+          format: date-time
+          description: Primeira atribuição, quando o chamado entra em `em_atendimento`.
         resolvidoEm: { type: [string, 'null'], format: date-time }
         fechadoEm: { type: [string, 'null'], format: date-time }
         tempoPausadoMinutos: { type: integer, default: 0, example: 0 }
@@ -1588,6 +1784,12 @@ components:
           enum: [novo, em_atendimento, aguardando_cliente, aguardando_fornecedor, escalado, resolvido, fechado, reaberto]
           example: em_atendimento
         usuarioId: { type: string, format: uuid }
+        tecnicoId:
+          type: [string, 'null']
+          format: uuid
+          description: |
+            Técnico responsável depois da transição. Numa reatribuição, `deStatus` e `paraStatus` são iguais
+            e só este campo muda.
         motivo: { type: [string, 'null'], maxLength: 500 }
         ocorridoEm: { type: string, format: date-time, example: '2026-09-17T13:20:00Z' }
 
@@ -1609,51 +1811,86 @@ components:
         ativo: { type: boolean, default: true, example: true }
 
     PoliticaSla:
+      allOf:
+        - type: object
+          required: [id]
+          properties:
+            id: { type: string, format: uuid, example: 9f1c4e2a-3b5d-4c7e-8a9b-0c1d2e3f4a5b }
+        - $ref: '#/components/schemas/NovaPoliticaSla'
+
+    NovaPoliticaSla:
       type: object
-      required: [id, nome, prioridade, primeiraRespostaMinutos, resolucaoMinutos, regime]
+      required: [nome, prazos, regime]
+      description: |
+        No regime `comercial`, `fusoHorario`, `expedienteDias`, `expedienteInicio` e `expedienteFim` são
+        obrigatórios — sem eles não há como saber quando o relógio corre. No regime `corrido`, são ignorados.
       properties:
-        id: { type: string, format: uuid, example: 9f1c4e2a-3b5d-4c7e-8a9b-0c1d2e3f4a5b }
-        nome: { type: string, example: Premium 24x7 }
-        prioridade: { type: string, enum: [baixa, media, alta, critica], example: critica }
-        primeiraRespostaMinutos: { type: integer, minimum: 1, example: 15 }
-        resolucaoMinutos: { type: integer, minimum: 1, example: 240 }
+        nome: { type: string, minLength: 2, maxLength: 120, example: Premium 24x7 }
+        prazos:
+          type: array
+          description: Um prazo para cada uma das quatro prioridades, sem repetir.
+          minItems: 4
+          maxItems: 4
+          items: { $ref: '#/components/schemas/PrazoSla' }
+          example:
+            - { prioridade: baixa, primeiraRespostaMinutos: 240, inicioAtendimentoMinutos: 480, resolucaoMinutos: 2880 }
+            - { prioridade: media, primeiraRespostaMinutos: 120, inicioAtendimentoMinutos: 240, resolucaoMinutos: 1440 }
+            - { prioridade: alta, primeiraRespostaMinutos: 60, inicioAtendimentoMinutos: 120, resolucaoMinutos: 480 }
+            - { prioridade: critica, primeiraRespostaMinutos: 15, inicioAtendimentoMinutos: 30, resolucaoMinutos: 240 }
         regime:
           type: string
           enum: [corrido, comercial]
           description: |
             `corrido` conta 24 horas por dia. `comercial` conta apenas dentro do expediente configurado.
             Feriados não são considerados em nenhum dos dois — decisão registrada na spec.
-          example: corrido
+          example: comercial
+        fusoHorario:
+          type: [string, 'null']
+          description: Fuso do expediente, no formato IANA. Os horários de `expedienteInicio` e `expedienteFim` estão nele.
+          example: America/Sao_Paulo
         expedienteDias:
           type: array
-          description: Dias da semana do expediente, de 1 (segunda) a 7 (domingo). Usado só no regime comercial.
+          description: Dias da semana do expediente, de 1 (segunda) a 7 (domingo).
           items: { type: integer, minimum: 1, maximum: 7 }
+          uniqueItems: true
           example: [1, 2, 3, 4, 5]
-        expedienteInicio: { type: [string, 'null'], example: '08:00' }
-        expedienteFim: { type: [string, 'null'], example: '18:00' }
+        expedienteInicio:
+          type: [string, 'null']
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: '08:00'
+        expedienteFim:
+          type: [string, 'null']
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: '18:00'
         padrao:
           type: boolean
           description: Política aplicada a chamado sem contrato vinculado, incluindo todo chamado interno.
           default: false
           example: false
+      if:
+        properties:
+          regime: { const: comercial }
+        required: [regime]
+      then:
+        required: [fusoHorario, expedienteDias, expedienteInicio, expedienteFim]
+        properties:
+          fusoHorario: { type: string }
+          expedienteDias: { minItems: 1 }
+          expedienteInicio: { type: string }
+          expedienteFim: { type: string }
 
-    NovaPoliticaSla:
+    PrazoSla:
       type: object
-      required: [nome, prioridade, primeiraRespostaMinutos, resolucaoMinutos, regime]
+      required: [prioridade, primeiraRespostaMinutos, inicioAtendimentoMinutos, resolucaoMinutos]
+      description: |
+        Os três tempos da §45, todos contados a partir da abertura e descontadas as pausas:
+        até a primeira resposta pública, até o início do atendimento (primeira atribuição) e até a
+        resolução.
       properties:
-        nome: { type: string, minLength: 2, maxLength: 120, example: Premium 24x7 }
         prioridade: { type: string, enum: [baixa, media, alta, critica], example: critica }
         primeiraRespostaMinutos: { type: integer, minimum: 1, example: 15 }
+        inicioAtendimentoMinutos: { type: integer, minimum: 1, example: 30 }
         resolucaoMinutos: { type: integer, minimum: 1, example: 240 }
-        regime: { type: string, enum: [corrido, comercial], example: corrido }
-        expedienteDias:
-          type: array
-          description: Dias da semana do expediente, de 1 (segunda) a 7 (domingo).
-          items: { type: integer, minimum: 1, maximum: 7 }
-          example: [1, 2, 3, 4, 5]
-        expedienteInicio: { type: [string, 'null'], example: '08:00' }
-        expedienteFim: { type: [string, 'null'], example: '18:00' }
-        padrao: { type: boolean, default: false, example: false }
 
     VinculoContratoSla:
       type: object
@@ -1674,20 +1911,37 @@ components:
 
     StatusTecnico:
       type: object
-      required: [empresaId, status, chamadosAbertos, foraSla, atualizadoEm]
+      required: [empresaId, status, chamadosAbertos, criticosAbertos, foraSla, vencendo24h, atualizadoEm]
       properties:
         empresaId: { type: string, format: uuid, example: be80e43d-cac3-41ff-895b-7125637878f7 }
         status:
           type: string
           enum: [ok, atencao, critico]
           description: |
-            Um dos quatro status exibidos na ficha de empresa do CRM, conforme §10.4 do Contrato.
-            Calculado a partir dos chamados críticos em aberto e do cumprimento de SLA.
+            Um dos quatro status exibidos na ficha de empresa do CRM, conforme §10.4 do Contrato. Conta só
+            chamados em aberto — qualquer status que não seja `resolvido` nem `fechado`.
+
+            - `critico` — ao menos um chamado de prioridade `critica` (`criticosAbertos > 0`) ou com o prazo
+              de resolução vencido (`foraSla > 0`).
+            - `atencao` — não é crítico, mas ao menos um chamado de prioridade `alta` ou com o prazo de
+              resolução vencendo nas próximas 24 horas (`vencendo24h > 0`).
+            - `ok` — nenhum dos dois casos, inclusive a empresa sem chamado.
           example: atencao
-        chamadosAbertos: { type: integer, example: 3 }
+        chamadosAbertos: { type: integer, minimum: 0, example: 3 }
+        criticosAbertos:
+          type: integer
+          minimum: 0
+          description: Chamados em aberto com prioridade `critica`.
+          example: 0
         foraSla:
           type: integer
+          minimum: 0
           description: Chamados em aberto com prazo de resolução vencido.
+          example: 0
+        vencendo24h:
+          type: integer
+          minimum: 0
+          description: Chamados em aberto cujo prazo de resolução vence nas próximas 24 horas.
           example: 1
         atualizadoEm: { type: string, format: date-time, example: '2026-09-17T14:00:00Z' }
 
