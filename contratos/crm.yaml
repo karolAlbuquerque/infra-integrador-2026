@@ -1,11 +1,12 @@
 openapi: 3.1.0
 info:
   title: CRM
-  version: 0.3.0
+  version: 0.4.0
   summary: Contrato do módulo CRM — dono de empresas, contatos e unidades para todo o sistema.
   description: |
     Cobre os endpoints de Empresas e Contatos fechados no Contrato de Integração §10, já
-    ajustados após a revisão da issue #3, e, a partir da 0.3.0, Funil e Oportunidades.
+    ajustados após a revisão da issue #3; a partir da 0.3.0, Funil e Oportunidades; a partir
+    da 0.4.0, Atividades, Tarefas, Reuniões e Objeções.
     Os eventos publicados estão em crm.asyncapi.yaml.
     Propostas não faz parte deste contrato — é escopo do Grupo 5 (Contratos e Documentos).
   license:
@@ -23,6 +24,8 @@ tags:
     description: Funis de vendas e suas etapas
   - name: oportunidades
     description: Negociações em andamento, ganhas e perdidas
+  - name: atividades
+    description: Atividades, tarefas, reuniões e objeções ligadas às oportunidades
   - name: saude
     description: Estado do serviço
 
@@ -587,6 +590,9 @@ paths:
       responses:
         '201':
           description: Etapa criada
+          headers:
+            Location:
+              schema: { type: string, example: /api/crm/etapas/3a4b5c6d-7e8f-4a1b-9c2d-3e4f5a6b7c8d }
           content:
             application/json:
               schema:
@@ -933,6 +939,504 @@ paths:
         '404': { $ref: '#/components/responses/NaoEncontrado' }
         '409': { $ref: '#/components/responses/Conflito' }
 
+  /api/crm/oportunidades/{id}/atividades:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [atividades]
+      operationId: atividadesDaOportunidade
+      summary: Histórico do que já foi feito na oportunidade, mais recente primeiro
+      description: Exige `crm.oportunidade.ver`, com o mesmo recorte de dono e equipe da oportunidade.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+      responses:
+        '200':
+          description: Página de atividades
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Atividade' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    post:
+      tags: [atividades]
+      operationId: registrarAtividade
+      summary: Registrar uma ligação, e-mail, mensagem ou visita já feita
+      description: Exige `crm.oportunidade.editar`. Vale também para oportunidade fechada, que continua tendo histórico.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaAtividade' }
+      responses:
+        '201':
+          description: Atividade registrada
+          headers:
+            Location:
+              schema: { type: string, example: /api/crm/atividades/5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Atividade' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/atividades/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    delete:
+      tags: [atividades]
+      operationId: excluirAtividade
+      summary: Excluir atividade registrada por engano (soft delete)
+      description: Exige `crm.oportunidade.editar`.
+      responses:
+        '200':
+          description: Atividade excluída
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/tarefas:
+    get:
+      tags: [atividades]
+      operationId: minhasTarefas
+      summary: Tarefas do usuário, as mais urgentes primeiro
+      description: |
+        Exige `crm.oportunidade.ver`. Sem `responsavelId`, devolve as tarefas do próprio usuário.
+        Consultar as de outro responsável exige `crm.oportunidade.ver_todas`. Ordenadas por
+        vencimento, sem data por último.
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - name: status
+          in: query
+          schema: { type: string, enum: [pendente, concluida] }
+        - name: vencidas
+          in: query
+          description: true devolve só as pendentes com vencimento já passado (RF-CRM-16)
+          schema: { type: boolean }
+        - name: responsavelId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Página de tarefas
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/Pagina'
+                          - properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/Tarefa' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [atividades]
+      operationId: criarTarefa
+      summary: Criar tarefa, ligada ou não a uma oportunidade
+      description: |
+        Exige `crm.oportunidade.editar`. Sem `responsavelId`, o responsável é o usuário do token.
+        Oportunidade inexistente ou fora do recorte responde 400 em `oportunidadeId`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaTarefa' }
+      responses:
+        '201':
+          description: Tarefa criada
+          headers:
+            Location:
+              schema: { type: string, example: /api/crm/tarefas/6c7d8e9f-0a1b-4c2d-9e3f-4a5b6c7d8e9f }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Tarefa' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/crm/tarefas/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [atividades]
+      operationId: editarTarefa
+      summary: Editar descrição, responsável ou vencimento
+      description: |
+        Exige `crm.oportunidade.editar` ou, para o responsável pela tarefa, `crm.oportunidade.ver`:
+        assim o pré-vendas edita a própria tarefa, sem poder repassá-la a outra pessoa (403).
+        Enxerga a tarefa quem é responsável por ela, quem a criou, quem enxerga a oportunidade
+        ligada ou quem tem `crm.oportunidade.ver_todas`; os demais recebem 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EditarTarefa' }
+      responses:
+        '200':
+          description: Tarefa atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Tarefa' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    delete:
+      tags: [atividades]
+      operationId: excluirTarefa
+      summary: Excluir tarefa (soft delete)
+      description: Exige `crm.oportunidade.editar`.
+      responses:
+        '200':
+          description: Tarefa excluída
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/tarefas/{id}/concluir:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [atividades]
+      operationId: concluirTarefa
+      summary: Marcar tarefa como concluída
+      description: |
+        Exige `crm.oportunidade.editar` ou, para o responsável pela tarefa, `crm.oportunidade.ver`
+        (o pré-vendas conclui a própria tarefa). Tarefa de outra pessoa sem `crm.oportunidade.editar`
+        responde 403. Tarefa já concluída responde 409 (`TAREFA_CONCLUIDA`).
+      responses:
+        '200':
+          description: Tarefa concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Tarefa' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+
+  /api/crm/oportunidades/{id}/tarefas:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [atividades]
+      operationId: tarefasDaOportunidade
+      summary: Tarefas ligadas à oportunidade
+      description: Exige `crm.oportunidade.ver`, com o recorte da oportunidade.
+      responses:
+        '200':
+          description: Tarefas, pendentes primeiro
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Tarefa' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/reunioes:
+    get:
+      tags: [atividades]
+      operationId: agendaDeReunioes
+      summary: Agenda — reuniões de um período (RF-CRM-11)
+      description: |
+        Exige `crm.oportunidade.ver`. Devolve as reuniões das oportunidades que o usuário
+        enxerga, entre `de` e `ate` (inclusive), em ordem de horário. Período de até 62 dias.
+      parameters:
+        - name: de
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: ate
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Reuniões do período
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Reuniao' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/crm/oportunidades/{id}/reunioes:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [atividades]
+      operationId: reunioesDaOportunidade
+      summary: Reuniões da oportunidade, mais recente primeiro
+      description: Exige `crm.oportunidade.ver`, com o recorte da oportunidade.
+      responses:
+        '200':
+          description: Reuniões
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Reuniao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    post:
+      tags: [atividades]
+      operationId: agendarReuniao
+      summary: Agendar reunião
+      description: Exige `crm.oportunidade.editar`. Só em oportunidade aberta (409 `OPORTUNIDADE_FECHADA`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaReuniao' }
+      responses:
+        '201':
+          description: Reunião agendada
+          headers:
+            Location:
+              schema: { type: string, example: /api/crm/reunioes/7d8e9f0a-1b2c-4d3e-8f4a-5b6c7d8e9f0a }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Reuniao' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+
+  /api/crm/reunioes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [atividades]
+      operationId: reagendarReuniao
+      summary: Reagendar ou alterar os dados da reunião
+      description: |
+        Exige `crm.oportunidade.editar`. Reunião já registrada responde 409
+        (`REUNIAO_REGISTRADA`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaReuniao' }
+      responses:
+        '200':
+          description: Reunião atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Reuniao' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+    delete:
+      tags: [atividades]
+      operationId: cancelarReuniao
+      summary: Cancelar reunião (soft delete)
+      description: Exige `crm.oportunidade.editar`. Reunião já registrada responde 409 (`REUNIAO_REGISTRADA`).
+      responses:
+        '200':
+          description: Reunião cancelada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+
+  /api/crm/reunioes/{id}/registro:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [atividades]
+      operationId: registrarReuniao
+      summary: Registro pós-reunião (RF-CRM-12)
+      description: |
+        Exige `crm.oportunidade.editar`. Grava o resumo e o próximo passo, que também passa a
+        ser o próximo passo da oportunidade quando ela está aberta. As objeções informadas são
+        registradas na oportunidade, ligadas à reunião. Registrar de novo responde 409
+        (`REUNIAO_REGISTRADA`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegistroReuniao' }
+      responses:
+        '200':
+          description: Reunião registrada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Reuniao' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflito' }
+
+  /api/crm/oportunidades/{id}/objecoes:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [atividades]
+      operationId: objecoesDaOportunidade
+      summary: Objeções levantadas nesta negociação
+      description: Exige `crm.oportunidade.ver`, com o recorte da oportunidade.
+      responses:
+        '200':
+          description: Objeções, mais recente primeiro
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Objecao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    post:
+      tags: [atividades]
+      operationId: registrarObjecao
+      summary: Registrar objeção
+      description: Exige `crm.oportunidade.editar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovaObjecao' }
+      responses:
+        '201':
+          description: Objeção registrada
+          headers:
+            Location:
+              schema: { type: string, example: /api/crm/objecoes/8e9f0a1b-2c3d-4e4f-9a5b-6c7d8e9f0a1b }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data: { $ref: '#/components/schemas/Objecao' }
+        '400': { $ref: '#/components/responses/DadosInvalidos' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/crm/objecoes/frequentes:
+    get:
+      tags: [atividades]
+      operationId: objecoesFrequentes
+      summary: Biblioteca de objeções — os motivos mais registrados no tenant
+      description: |
+        Exige `crm.oportunidade.ver`. Agrupa pelo texto do motivo, sem diferenciar maiúsculas,
+        e devolve os 20 mais frequentes. Não expõe as oportunidades de origem.
+      responses:
+        '200':
+          description: Motivos e quantidade
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        maxItems: 20
+                        items: { $ref: '#/components/schemas/ObjecaoFrequente' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/crm/objecoes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    delete:
+      tags: [atividades]
+      operationId: excluirObjecao
+      summary: Excluir objeção registrada por engano (soft delete)
+      description: Exige `crm.oportunidade.editar`.
+      responses:
+        '200':
+          description: Objeção excluída
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Envelope' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
   /api/crm/health:
     get:
       tags: [saude]
@@ -960,6 +1464,11 @@ components:
       bearerFormat: JWT
 
   parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     Pagina:
       name: pagina
       in: query
@@ -1280,3 +1789,115 @@ components:
       required: [motivo]
       properties:
         motivo: { type: string, minLength: 1, maxLength: 255, example: Preço acima do orçamento }
+
+    NovaAtividade:
+      type: object
+      required: [tipo, descricao]
+      properties:
+        tipo: { type: string, enum: [ligacao, email, whatsapp, visita, outro] }
+        descricao: { type: string, minLength: 1, maxLength: 2000, example: Conversa com o sócio sobre backup em nuvem }
+        realizadaEm: { type: [string, 'null'], format: date-time, description: 'Sem ela, o momento do registro. Data futura responde 400 em realizadaEm: o que ainda vai acontecer é tarefa ou reunião' }
+
+    Atividade:
+      type: object
+      required: [id, oportunidadeId, tipo, descricao, realizadaEm]
+      properties:
+        id: { type: string, format: uuid }
+        oportunidadeId: { type: string, format: uuid }
+        tipo: { type: string, enum: [ligacao, email, whatsapp, visita, outro] }
+        descricao: { type: string }
+        realizadaEm: { type: string, format: date-time }
+        responsavelId: { type: [string, 'null'], format: uuid, description: Quem registrou }
+
+    NovaTarefa:
+      type: object
+      required: [descricao]
+      properties:
+        descricao: { type: string, minLength: 1, maxLength: 500, example: Enviar o relatório do diagnóstico }
+        tipo: { type: [string, 'null'], enum: [ligacao, email, whatsapp, visita, reuniao, follow_up, outro, null] }
+        oportunidadeId: { type: [string, 'null'], format: uuid }
+        responsavelId: { type: [string, 'null'], format: uuid }
+        dataVencimento: { type: [string, 'null'], format: date-time }
+
+    EditarTarefa:
+      type: object
+      required: [descricao]
+      properties:
+        descricao: { type: string, minLength: 1, maxLength: 500 }
+        tipo: { type: [string, 'null'], enum: [ligacao, email, whatsapp, visita, reuniao, follow_up, outro, null] }
+        responsavelId: { type: [string, 'null'], format: uuid, description: Ausente mantém o atual }
+        dataVencimento: { type: [string, 'null'], format: date-time }
+
+    Tarefa:
+      type: object
+      required: [id, descricao, status, vencida, criadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        oportunidadeId: { type: [string, 'null'], format: uuid }
+        descricao: { type: string }
+        tipo: { type: [string, 'null'] }
+        responsavelId: { type: [string, 'null'], format: uuid }
+        dataVencimento: { type: [string, 'null'], format: date-time }
+        status: { type: string, enum: [pendente, concluida] }
+        vencida: { type: boolean, description: true quando pendente e o vencimento já passou (RF-CRM-16) }
+        concluidaEm: { type: [string, 'null'], format: date-time }
+        criadoEm: { type: string, format: date-time }
+
+    NovaReuniao:
+      type: object
+      required: [dataHora]
+      properties:
+        dataHora: { type: string, format: date-time }
+        participantes: { type: [string, 'null'], maxLength: 2000, example: 'Ana (sócia), Carlos (TI)' }
+        localOuLink: { type: [string, 'null'], maxLength: 255, example: 'https://meet.google.com/abc-defg-hij' }
+        pauta: { type: [string, 'null'], maxLength: 2000 }
+
+    RegistroReuniao:
+      type: object
+      required: [resumo, proximoPasso, dataProximoPasso]
+      properties:
+        resumo: { type: string, minLength: 1, maxLength: 4000, description: 'Resumo, dores identificadas e decisão tomada' }
+        proximoPasso: { type: string, minLength: 1, maxLength: 255 }
+        dataProximoPasso: { type: string, format: date }
+        objecoes:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 255 }
+
+    Reuniao:
+      type: object
+      required: [id, oportunidadeId, dataHora, registrada]
+      properties:
+        id: { type: string, format: uuid }
+        oportunidadeId: { type: string, format: uuid }
+        dataHora: { type: string, format: date-time }
+        participantes: { type: [string, 'null'] }
+        localOuLink: { type: [string, 'null'] }
+        pauta: { type: [string, 'null'] }
+        registrada: { type: boolean }
+        resumo: { type: [string, 'null'] }
+        proximoPasso: { type: [string, 'null'] }
+        registradaEm: { type: [string, 'null'], format: date-time }
+
+    NovaObjecao:
+      type: object
+      required: [motivo]
+      properties:
+        motivo: { type: string, minLength: 1, maxLength: 255, example: Preço acima do orçamento }
+
+    Objecao:
+      type: object
+      required: [id, oportunidadeId, motivo, criadoEm]
+      properties:
+        id: { type: string, format: uuid }
+        oportunidadeId: { type: string, format: uuid }
+        reuniaoId: { type: [string, 'null'], format: uuid }
+        motivo: { type: string }
+        criadoEm: { type: string, format: date-time }
+
+    ObjecaoFrequente:
+      type: object
+      required: [motivo, total]
+      properties:
+        motivo: { type: string, example: preço acima do orçamento }
+        total: { type: integer, minimum: 1 }

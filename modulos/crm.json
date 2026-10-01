@@ -14,6 +14,8 @@
     { "rota": "/contatos", "nome": "Contatos", "permissao": "crm.contato.ver" },
     { "rota": "/funil", "nome": "Funil de Vendas", "permissao": "crm.oportunidade.ver" },
     { "rota": "/oportunidades", "nome": "Oportunidades", "permissao": "crm.oportunidade.ver" },
+    { "rota": "/tarefas", "nome": "Tarefas", "permissao": "crm.oportunidade.ver" },
+    { "rota": "/agenda", "nome": "Agenda", "permissao": "crm.oportunidade.ver" },
     { "rota": "/prospeccao", "nome": "Prospecção", "permissao": "crm.prospeccao.ver" }
   ]
 }
