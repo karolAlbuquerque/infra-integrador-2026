@@ -20,6 +20,7 @@ precisa estar aqui.
 - **Mudança incompatível** (campo removido, tipo ou significado alterado): publique
   `/api/{modulo}/v2/...`, `versao: 2` do evento ou `vw_pub_..._v2`, **ao lado** da versão
   antiga, até os consumidores migrarem.
+- **Módulo registrado em `modulos/` precisa do `{modulo}.yaml`.** O registro declara `prefixoApi` e `healthcheck`, ou seja, afirma que o módulo serve uma API REST — então o OpenAPI dela é obrigatório, e o `scripts/validar-coerencia.mjs` reprova o CI quando falta. Quem ainda não entregou sai como pendência conhecida na saída do validador, com a issue ao lado: é dívida visível, não exceção silenciosa.
 - Todo endpoint usa o envelope `{ success, data, message, errors }` e os códigos da §8.4.
 - Todo evento usa o envelope da §9.7 e o tipo `modulo.entidade.acao`, com verbo no particípio.
 
