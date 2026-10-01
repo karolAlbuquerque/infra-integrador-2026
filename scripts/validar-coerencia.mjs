@@ -6,6 +6,7 @@ import YAML from "yaml";
 const root = process.cwd();
 const modulosDir = join(root, "modulos");
 const permissoesDir = join(root, "permissoes");
+const contratosDir = join(root, "contratos");
 const erros = [];
 
 function erro(arquivo, mensagem) {
@@ -89,6 +90,26 @@ for (const { arquivo, registro } of registros) {
   }
 }
 
+// Todo módulo registrado serve uma API REST — o próprio registro declara prefixoApi e healthcheck —,
+// então o OpenAPI dele precisa estar publicado (§14.1 do Contrato de Integração). Enquanto um grupo
+// não entrega, a dívida fica listada aqui e sai como aviso: o main não trava por pendência de outro
+// grupo, mas ela também não desaparece do log do CI.
+const SEM_OPENAPI_AINDA = new Map([
+  ["landing", "issue #24"],
+]);
+
+const contratos = new Set(await readdir(contratosDir));
+const pendencias = [];
+for (const { arquivo, registro } of registros) {
+  if (!registro.codigo || contratos.has(`${registro.codigo}.yaml`)) continue;
+  const motivo = SEM_OPENAPI_AINDA.get(registro.codigo);
+  if (motivo) {
+    pendencias.push(`${arquivo}: falta contratos/${registro.codigo}.yaml — pendência conhecida (${motivo})`);
+  } else {
+    erro(arquivo, `o módulo declara prefixoApi "${registro.prefixoApi}", então precisa do OpenAPI em contratos/${registro.codigo}.yaml (§14.1)`);
+  }
+}
+
 const arquivosPorOrdemMenu = new Map();
 for (const { arquivo, registro } of registros) {
   if (registro.ordemMenu === undefined) continue;
@@ -98,6 +119,10 @@ for (const { arquivo, registro } of registros) {
   } else {
     arquivosPorOrdemMenu.set(registro.ordemMenu, arquivo);
   }
+}
+
+if (pendencias.length > 0) {
+  console.warn(["Pendências conhecidas:", ...pendencias].join("\n"));
 }
 
 if (erros.length > 0) {
