@@ -9,6 +9,9 @@
   "ordemMenu": 80,
   "healthcheck": "/api/landing/health",
   "itensSubmenu": [
-    { "rota": "/envios", "nome": "Envios", "permissao": "landing.envio.ver" }
+    { "rota": "/envios", "nome": "Envios", "permissao": "landing.envio.ver" },
+    { "rota": "/paginas",     "nome": "Landing Pages", "permissao": "landing.pagina.ver" },
+    { "rota": "/formularios", "nome": "Formulários",   "permissao": "landing.formulario.ver" },
+    { "rota": "/metricas",    "nome": "Métricas",      "permissao": "landing.metrica.ver" }
   ]
 }

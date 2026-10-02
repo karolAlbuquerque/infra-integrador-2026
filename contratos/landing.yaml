@@ -1,0 +1,2080 @@
+openapi: 3.0.3
+info:
+  title: Landing Pages e Formulários — API
+  version: 0.1.0
+  description: |
+    Contrato da API do módulo `landing` (Grupo 7 — Rafael), conforme o Contrato de
+    Integração dos Módulos v0.7.
+
+    **Escopo deste arquivo:** frentes de Camila Martins Sousa (formulários e fundação),
+    Giovanna Castro Freitas (landing pages), Emmylio Chaves Queiroz (área pública e embed)
+    e Pablo Leandro Gloria (chatbot, origem e métricas). As rotas de envios (telas 7 e 8,
+    frente do Rafael) ficam fora e entram no mesmo arquivo pelo PR dele.
+
+    **Regras do Contrato aplicadas em todas as rotas**
+    - Envelope `success` / `data` / `message` / `errors` em todas as respostas, inclusive
+      as de erro (§8.2). A única exceção é o arquivo estático `form.js`.
+    - O tenant vem **sempre** do claim `tenant_id` do token (superfície autenticada) ou da
+      chave pública do formulário / slug da página (superfície pública). Nenhuma rota
+      aceita `tenantId` no corpo, na query ou em cabeçalho (§6, §12.6).
+    - Registro de outro tenant responde `404`, nunca `403` (§8.4).
+    - Listagens paginadas, no máximo 100 itens por página (§8.3).
+    - Rotas públicas ficam sob `/public/landing/**`, sem token, com rate limit por IP, e
+      nunca devolvem dado de negócio (§12.6).
+
+    **Extensões usadas:** `x-responsavel` indica a frente dona da rota; `x-situacao` diz se
+    a rota já foi entregue (`implementado`) ou ainda está prevista (`previsto`).
+  contact:
+    name: Grupo 7 — Landing Pages e Formulários
+servers:
+  - url: http://localhost:8080
+    description: Gateway, em desenvolvimento (tráfego do navegador)
+  - url: http://landing:8088
+    description: Chamada direta entre serviços, na rede do Docker (§9.1)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Sistema
+    description: Saúde do serviço (§8.5). Frente de Camila Martins Sousa (fundação).
+  - name: Formulários
+    description: Telas 4 e 5. Frente de Camila Martins Sousa.
+  - name: Landing Pages
+    description: Telas 1, 2 e 3. Frente de Giovanna Castro Freitas.
+  - name: Embed
+    description: Tela 10. Frente de Emmylio Chaves Queiroz.
+  - name: Chatbot
+    description: Tela 6. Frente de Pablo Leandro Gloria.
+  - name: Métricas
+    description: Tela 11. Frente de Pablo Leandro Gloria.
+  - name: Público — Formulário
+    description: Telas 13 e 14 e `form.js`. Frente de Emmylio Chaves Queiroz.
+  - name: Público — Landing Page
+    description: Tela 12. Frente de Giovanna Castro Freitas.
+  - name: Público — Chatbot e origem
+    description: Tela 15, registro de visitas e de início de preenchimento. Frente de Pablo Leandro Gloria.
+
+paths:
+
+  # ════════════════════════════════════════════════════════════════════
+  #  SISTEMA — Camila (fundação)
+  # ════════════════════════════════════════════════════════════════════
+
+  /api/landing/health:
+    get:
+      tags: [Sistema]
+      summary: Saúde do serviço
+      description: Responde `200` quando o serviço está de pé e conectado ao banco. Não exige token (§8.5).
+      operationId: health
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      security: []
+      responses:
+        '200':
+          description: Serviço de pé
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          status: { type: string, example: "UP" }
+
+  # ════════════════════════════════════════════════════════════════════
+  #  FORMULÁRIOS — Camila (telas 4 e 5)
+  # ════════════════════════════════════════════════════════════════════
+
+  /api/landing/formularios:
+    get:
+      tags: [Formulários]
+      summary: Listar formulários (tela 4)
+      operationId: listarFormularios
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      x-permissao: landing.formulario.ver
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - $ref: '#/components/parameters/Ordenar'
+        - name: nome
+          in: query
+          description: Filtra pelo nome (contém, sem diferenciar maiúsculas).
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/StatusFormulario' }
+      responses:
+        '200':
+          description: Página de formulários
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/PaginaResultado'
+                          - type: object
+                            properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/FormularioResumo' }
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [Formulários]
+      summary: Criar formulário
+      operationId: criarFormulario
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      x-permissao: landing.formulario.criar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormularioEntrada' }
+      responses:
+        '201': { $ref: '#/components/responses/FormularioCriado' }
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/landing/formularios/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Formulários]
+      summary: Detalhar formulário, com os campos (tela 5)
+      operationId: detalharFormulario
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      x-permissao: landing.formulario.ver
+      responses:
+        '200':
+          description: Formulário
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Formulario' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [Formulários]
+      summary: Editar formulário
+      operationId: editarFormulario
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      x-permissao: landing.formulario.editar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormularioEntrada' }
+      responses:
+        '200':
+          description: Formulário atualizado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Formulario' }
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    delete:
+      tags: [Formulários]
+      summary: Excluir formulário (exclusão lógica)
+      description: Preenche `deleted_at`. O formulário deixa de aceitar envios e some das listagens.
+      operationId: excluirFormulario
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      x-permissao: landing.formulario.excluir
+      responses:
+        '200': { $ref: '#/components/responses/SucessoSemDados' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/landing/formularios/{id}/duplicar:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Formulários]
+      summary: Duplicar formulário
+      description: Cria um formulário novo, em `INATIVO`, com cópia dos campos e uma chave pública nova.
+      operationId: duplicarFormulario
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      x-permissao: landing.formulario.criar
+      responses:
+        '201': { $ref: '#/components/responses/FormularioCriado' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/landing/formularios/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [Formulários]
+      summary: Ativar ou desativar o formulário
+      description: Só formulário `ATIVO` é servido pelas rotas públicas.
+      operationId: alterarStatusFormulario
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      x-permissao: landing.formulario.editar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { $ref: '#/components/schemas/StatusFormulario' }
+      responses:
+        '200':
+          description: Status alterado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Formulario' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '422':
+          description: Formulário sem nenhum campo não pode ser ativado (`FORMULARIO_SEM_CAMPOS`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+
+  /api/landing/formularios/{id}/campos:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Formulários]
+      summary: Listar campos do formulário, na ordem
+      description: Lista limitada pela natureza do recurso (campos de um formulário); não paginada.
+      operationId: listarCampos
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      x-permissao: landing.formulario.ver
+      responses:
+        '200':
+          description: Campos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Campo' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    post:
+      tags: [Formulários]
+      summary: Adicionar campo
+      description: O campo entra no fim da lista.
+      operationId: criarCampo
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      x-permissao: landing.formulario.editar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CampoEntrada' }
+      responses:
+        '201': { $ref: '#/components/responses/CampoCriado' }
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/landing/formularios/{id}/campos/ordem:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [Formulários]
+      summary: Reordenar campos
+      description: Recebe todos os ids de campo do formulário na nova ordem.
+      operationId: reordenarCampos
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      x-permissao: landing.formulario.editar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Reordenacao' }
+      responses:
+        '200': { $ref: '#/components/responses/SucessoSemDados' }
+        '400':
+          description: Lista incompleta ou com id de outro formulário (`ORDEM_INVALIDA`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/landing/formularios/{id}/campos/{campoId}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/CampoId'
+    put:
+      tags: [Formulários]
+      summary: Editar campo
+      operationId: editarCampo
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      x-permissao: landing.formulario.editar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CampoEntrada' }
+      responses:
+        '200':
+          description: Campo atualizado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Campo' }
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    delete:
+      tags: [Formulários]
+      summary: Excluir campo (exclusão lógica)
+      description: Respostas já recebidas para o campo continuam guardadas nos envios.
+      operationId: excluirCampo
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      x-permissao: landing.formulario.editar
+      responses:
+        '200': { $ref: '#/components/responses/SucessoSemDados' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/landing/formularios/{id}/campos/{campoId}/duplicar:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/CampoId'
+    post:
+      tags: [Formulários]
+      summary: Duplicar campo
+      description: A cópia entra logo abaixo do campo original.
+      operationId: duplicarCampo
+      x-responsavel: Camila Martins Sousa
+      x-situacao: previsto
+      x-permissao: landing.formulario.editar
+      responses:
+        '201': { $ref: '#/components/responses/CampoCriado' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  # ════════════════════════════════════════════════════════════════════
+  #  EMBED — Emmylio (tela 10)
+  # ════════════════════════════════════════════════════════════════════
+
+  /api/landing/formularios/{id}/embed:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Embed]
+      summary: Código de incorporação, link hospedado e domínios autorizados
+      operationId: obterEmbed
+      x-responsavel: Emmylio Chaves Queiroz
+      x-situacao: previsto
+      x-permissao: landing.formulario.ver
+      responses:
+        '200':
+          description: Configuração de embed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ConfiguracaoEmbed' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/landing/formularios/{id}/embed/dominios:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [Embed]
+      summary: Substituir a lista de domínios autorizados (RF27)
+      description: |
+        Domínios que podem usar o formulário via embed. A validação desses domínios nas
+        rotas públicas já foi entregue no MR; a tela que mantém a lista ainda está prevista.
+      operationId: atualizarDominiosEmbed
+      x-responsavel: Emmylio Chaves Queiroz
+      x-situacao: previsto
+      x-permissao: landing.formulario.compartilhar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dominios]
+              properties:
+                dominios:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: string
+                    description: Domínio sem esquema nem caminho.
+                    example: www.empresacliente.com.br
+      responses:
+        '200':
+          description: Lista atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ConfiguracaoEmbed' }
+        '400':
+          description: Domínio mal formado (`DOMINIO_INVALIDO`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  # ════════════════════════════════════════════════════════════════════
+  #  CHATBOT — Pablo (tela 6)
+  # ════════════════════════════════════════════════════════════════════
+
+  /api/landing/formularios/{id}/chatbot:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Chatbot]
+      summary: Configuração das perguntas do chatbot
+      description: |
+        O chatbot é um modo de exibição do formulário, não um recurso separado. Cada campo
+        recebe um texto de pergunta e uma posição na conversa.
+      operationId: obterChatbot
+      x-responsavel: Pablo Leandro Gloria
+      x-situacao: previsto
+      x-permissao: landing.chatbot.ver
+      responses:
+        '200':
+          description: Perguntas na ordem da conversa
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ConfiguracaoChatbot' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [Chatbot]
+      summary: Salvar ordem e texto das perguntas
+      description: Substitui a configuração inteira. Todo campo do formulário precisa aparecer uma vez.
+      operationId: salvarChatbot
+      x-responsavel: Pablo Leandro Gloria
+      x-situacao: previsto
+      x-permissao: landing.chatbot.editar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfiguracaoChatbot' }
+      responses:
+        '200':
+          description: Configuração salva
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ConfiguracaoChatbot' }
+        '400':
+          description: Campo faltando, repetido ou de outro formulário (`PERGUNTAS_INVALIDAS`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  # ════════════════════════════════════════════════════════════════════
+  #  LANDING PAGES — Giovanna (telas 1, 2 e 3)
+  # ════════════════════════════════════════════════════════════════════
+
+  /api/landing/paginas:
+    get:
+      tags: [Landing Pages]
+      summary: Listar landing pages (tela 1)
+      operationId: listarPaginas
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.ver
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - $ref: '#/components/parameters/Ordenar'
+        - name: nome
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/StatusPagina' }
+      responses:
+        '200':
+          description: Página de landing pages
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/PaginaResultado'
+                          - type: object
+                            properties:
+                              itens:
+                                type: array
+                                items: { $ref: '#/components/schemas/LandingPageResumo' }
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+    post:
+      tags: [Landing Pages]
+      summary: Criar landing page (nasce em RASCUNHO)
+      operationId: criarPagina
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.criar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LandingPageEntrada' }
+      responses:
+        '201': { $ref: '#/components/responses/PaginaCriada' }
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '409': { $ref: '#/components/responses/SlugDuplicado' }
+
+  /api/landing/paginas/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Landing Pages]
+      summary: Detalhar landing page, com os blocos do rascunho
+      operationId: detalharPagina
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.ver
+      responses:
+        '200':
+          description: Landing page
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/LandingPage' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    put:
+      tags: [Landing Pages]
+      summary: Editar configurações da página (tela 3)
+      description: Nome, slug, SEO, rastreamento e tema. Só altera o rascunho; o que está no ar muda na próxima publicação.
+      operationId: editarPagina
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.editar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LandingPageEntrada' }
+      responses:
+        '200':
+          description: Página atualizada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/LandingPage' }
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '409': { $ref: '#/components/responses/SlugDuplicado' }
+    delete:
+      tags: [Landing Pages]
+      summary: Excluir landing page (exclusão lógica)
+      operationId: excluirPagina
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.excluir
+      responses:
+        '200': { $ref: '#/components/responses/SucessoSemDados' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/landing/paginas/{id}/blocos:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Landing Pages]
+      summary: Listar blocos do rascunho, na ordem (tela 2)
+      operationId: listarBlocos
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.ver
+      responses:
+        '200':
+          description: Blocos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Bloco' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    post:
+      tags: [Landing Pages]
+      summary: Adicionar bloco
+      operationId: criarBloco
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.editar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BlocoEntrada' }
+      responses:
+        '201': { $ref: '#/components/responses/BlocoCriado' }
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/landing/paginas/{id}/blocos/ordem:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [Landing Pages]
+      summary: Reordenar blocos
+      operationId: reordenarBlocos
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.editar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Reordenacao' }
+      responses:
+        '200': { $ref: '#/components/responses/SucessoSemDados' }
+        '400':
+          description: Lista incompleta ou com id de outra página (`ORDEM_INVALIDA`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/landing/paginas/{id}/blocos/{blocoId}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/BlocoId'
+    put:
+      tags: [Landing Pages]
+      summary: Editar bloco
+      operationId: editarBloco
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.editar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BlocoEntrada' }
+      responses:
+        '200':
+          description: Bloco atualizado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Bloco' }
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+    delete:
+      tags: [Landing Pages]
+      summary: Excluir bloco
+      operationId: excluirBloco
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.editar
+      responses:
+        '200': { $ref: '#/components/responses/SucessoSemDados' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/landing/paginas/{id}/blocos/{blocoId}/duplicar:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/BlocoId'
+    post:
+      tags: [Landing Pages]
+      summary: Duplicar bloco
+      operationId: duplicarBloco
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.editar
+      responses:
+        '201': { $ref: '#/components/responses/BlocoCriado' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/landing/paginas/{id}/imagens:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Landing Pages]
+      summary: Enviar imagem para uso nos blocos
+      description: |
+        Armazenamento do tipo S3/MinIO, ainda a definir com a infraestrutura. A resposta traz a
+        URL pública da imagem para o bloco referenciar.
+      operationId: enviarImagem
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.editar
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [arquivo]
+              properties:
+                arquivo:
+                  type: string
+                  format: binary
+                  description: PNG, JPEG, WEBP ou SVG.
+      responses:
+        '201':
+          description: Imagem armazenada
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id: { type: string, format: uuid }
+                          url: { type: string, format: uri }
+        '400':
+          description: Tipo ou tamanho não aceito (`ARQUIVO_INVALIDO`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  /api/landing/paginas/{id}/publicar:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Landing Pages]
+      summary: Publicar
+      description: |
+        Gera a versão congelada (HTML) a partir do rascunho atual e passa a servi-la
+        publicamente. Edições posteriores só valem no ar depois de uma nova publicação.
+      operationId: publicarPagina
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.aprovar
+      responses:
+        '200':
+          description: Página publicada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/LandingPage' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '422':
+          description: |
+            Página sem blocos (`PAGINA_SEM_BLOCOS`), página arquivada (`PAGINA_ARQUIVADA`) ou
+            bloco de formulário apontando para formulário inativo (`FORMULARIO_INATIVO`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+
+  /api/landing/paginas/{id}/despublicar:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Landing Pages]
+      summary: Despublicar (volta para RASCUNHO)
+      operationId: despublicarPagina
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.aprovar
+      responses:
+        '200':
+          description: Página fora do ar
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/LandingPage' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+        '422':
+          description: A página não está publicada (`PAGINA_NAO_PUBLICADA`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+
+  /api/landing/paginas/{id}/arquivar:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Landing Pages]
+      summary: Arquivar (tira do ar e bloqueia nova publicação)
+      operationId: arquivarPagina
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      x-permissao: landing.pagina.aprovar
+      responses:
+        '200':
+          description: Página arquivada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/LandingPage' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+        '404': { $ref: '#/components/responses/NaoEncontrado' }
+
+  # ════════════════════════════════════════════════════════════════════
+  #  MÉTRICAS — Pablo (tela 11)
+  # ════════════════════════════════════════════════════════════════════
+
+  /api/landing/metricas/resumo:
+    get:
+      tags: [Métricas]
+      summary: Totais do período
+      description: Visitas, inícios de preenchimento, conclusões, abandonos e taxa de conversão.
+      operationId: resumoMetricas
+      x-responsavel: Pablo Leandro Gloria
+      x-situacao: previsto
+      x-permissao: landing.metrica.ver
+      parameters:
+        - $ref: '#/components/parameters/De'
+        - $ref: '#/components/parameters/Ate'
+        - $ref: '#/components/parameters/FiltroPaginaId'
+        - $ref: '#/components/parameters/FiltroFormularioId'
+        - $ref: '#/components/parameters/FiltroCampanha'
+      responses:
+        '200':
+          description: Totais
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Metricas' }
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/landing/metricas/paginas:
+    get:
+      tags: [Métricas]
+      summary: Métricas por landing page
+      operationId: metricasPorPagina
+      x-responsavel: Pablo Leandro Gloria
+      x-situacao: previsto
+      x-permissao: landing.metrica.ver
+      parameters:
+        - $ref: '#/components/parameters/De'
+        - $ref: '#/components/parameters/Ate'
+        - $ref: '#/components/parameters/FiltroCampanha'
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - $ref: '#/components/parameters/Ordenar'
+      responses:
+        '200':
+          description: Página de métricas, uma linha por landing page
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/PaginaResultado'
+                          - type: object
+                            properties:
+                              itens:
+                                type: array
+                                items:
+                                  allOf:
+                                    - type: object
+                                      properties:
+                                        paginaId: { type: string, format: uuid }
+                                        nome: { type: string }
+                                    - $ref: '#/components/schemas/Metricas'
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  /api/landing/metricas/campanhas:
+    get:
+      tags: [Métricas]
+      summary: Métricas por campanha (utm_campaign)
+      operationId: metricasPorCampanha
+      x-responsavel: Pablo Leandro Gloria
+      x-situacao: previsto
+      x-permissao: landing.metrica.ver
+      parameters:
+        - $ref: '#/components/parameters/De'
+        - $ref: '#/components/parameters/Ate'
+        - $ref: '#/components/parameters/FiltroPaginaId'
+        - $ref: '#/components/parameters/FiltroFormularioId'
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamanho'
+        - $ref: '#/components/parameters/Ordenar'
+      responses:
+        '200':
+          description: Página de métricas, uma linha por campanha
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: '#/components/schemas/PaginaResultado'
+                          - type: object
+                            properties:
+                              itens:
+                                type: array
+                                items:
+                                  allOf:
+                                    - type: object
+                                      properties:
+                                        campanha:
+                                          type: string
+                                          nullable: true
+                                          description: Valor de utm_campaign; nulo agrupa o tráfego sem campanha.
+                                    - $ref: '#/components/schemas/Metricas'
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/NaoAutenticado' }
+        '403': { $ref: '#/components/responses/SemPermissao' }
+
+  # ════════════════════════════════════════════════════════════════════
+  #  PÚBLICO — FORMULÁRIO E EMBED — Emmylio (MR entregue)
+  # ════════════════════════════════════════════════════════════════════
+
+  /public/landing/formularios/{chavePublica}:
+    parameters:
+      - $ref: '#/components/parameters/ChavePublica'
+    get:
+      tags: [Público — Formulário]
+      summary: Schema público do formulário
+      description: |
+        Devolve só o necessário para renderizar o formulário: campos, rótulos, tipos,
+        obrigatoriedade, modo de exibição e texto de consentimento. Nenhum dado
+        administrativo, nenhum envio, nenhum dado de outro módulo (§12.6).
+
+        Usado pelo `form.js` (embed, telas 14 e 15) e pela página hospedada (tela 13).
+        O tenant é resolvido pela chave pública, no servidor.
+
+        **Domínios autorizados (RF27):** quando a requisição chega de outro site (cabeçalho
+        `Origin` diferente da plataforma), o domínio precisa estar na lista do formulário.
+
+        **Implementação atual:** entregue no MR como `GET /public/v1/forms/{formKey}`.
+        A rota precisa ser renomeada para este caminho — o gateway só encaminha
+        `/public/landing/**` ao container `landing` (§12.8) e o caminho não leva versão
+        nem nome em inglês (§8.1).
+      operationId: obterFormularioPublico
+      x-responsavel: Emmylio Chaves Queiroz
+      x-situacao: implementado
+      x-rota-no-mr: GET /public/v1/forms/{formKey}
+      security: []
+      responses:
+        '200':
+          description: Schema público
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/FormularioPublico' }
+        '403': { $ref: '#/components/responses/DominioNaoAutorizado' }
+        '404':
+          description: Chave inexistente, formulário excluído ou inativo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '429': { $ref: '#/components/responses/LimiteExcedido' }
+
+  /public/landing/formularios/{chavePublica}/envios:
+    parameters:
+      - $ref: '#/components/parameters/ChavePublica'
+    post:
+      tags: [Público — Formulário]
+      summary: Receber e gravar a resposta de um visitante
+      description: |
+        Ordem das verificações: domínio autorizado → honeypot → consentimento → validação
+        dos campos → gravação. Depois do *commit*, a frente de envios (Rafael) traduz pelo
+        `crm_mapping`, cria/reaproveita empresa e contato no CRM por token de serviço e
+        publica `landing.formulario.recebido`.
+
+        **Honeypot:** se o campo-armadilha renderizado pelo `form.js` vier preenchido, a
+        resposta é **idêntica** à de sucesso e nada é gravado (bloqueio silencioso), para o
+        robô não perceber.
+
+        **Consentimento LGPD:** sem `consentimento.aceito = true` a requisição volta `400`
+        com `CONSENTIMENTO_OBRIGATORIO`.
+
+        A resposta não devolve o id do envio nem dado algum: a superfície pública recebe,
+        não consulta (§12.6).
+
+        **Implementação atual:** entregue no MR como `POST /public/v1/forms/{formKey}/submissions`.
+      operationId: enviarFormularioPublico
+      x-responsavel: Emmylio Chaves Queiroz
+      x-situacao: implementado
+      x-rota-no-mr: POST /public/v1/forms/{formKey}/submissions
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EnvioPublico' }
+      responses:
+        '200':
+          description: Envio recebido (também a resposta do honeypot)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ConfirmacaoEnvio' }
+        '400':
+          description: |
+            Campo inválido ou obrigatório ausente (`CAMPO_OBRIGATORIO`, `CNPJ_INVALIDO`,
+            `CPF_INVALIDO`, `EMAIL_INVALIDO`, `TELEFONE_INVALIDO`) ou consentimento ausente
+            (`CONSENTIMENTO_OBRIGATORIO`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+              example:
+                success: false
+                data: null
+                message: Não foi possível enviar o formulário.
+                errors:
+                  - campo: consentimento
+                    codigo: CONSENTIMENTO_OBRIGATORIO
+                    detalhe: É preciso aceitar o termo de consentimento para enviar.
+        '403': { $ref: '#/components/responses/DominioNaoAutorizado' }
+        '404':
+          description: Chave inexistente, formulário excluído ou inativo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '429': { $ref: '#/components/responses/LimiteExcedido' }
+
+  /public/landing/form.js:
+    get:
+      tags: [Público — Formulário]
+      summary: Script de incorporação
+      description: |
+        Arquivo estático que renderiza o formulário (modo tradicional, passo a passo ou
+        chatbot) dentro do site da empresa cliente. Responde o próprio arquivo, fora do
+        envelope, como na exceção de download da §8.2.
+
+        Uso no site externo:
+        `<script src="https://{dominio}/public/landing/form.js" data-formulario="{chavePublica}" async></script>`
+      operationId: obterScriptEmbed
+      x-responsavel: Emmylio Chaves Queiroz
+      x-situacao: implementado
+      security: []
+      responses:
+        '200':
+          description: O script
+          content:
+            text/javascript:
+              schema: { type: string }
+
+  # ════════════════════════════════════════════════════════════════════
+  #  PÚBLICO — LANDING PAGE — Giovanna (tela 12)
+  # ════════════════════════════════════════════════════════════════════
+
+  /public/landing/paginas/{slug}:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+    get:
+      tags: [Público — Landing Page]
+      summary: Versão publicada da landing page
+      description: |
+        Devolve a versão congelada gerada na última publicação. O tenant é resolvido pelo
+        slug, no servidor — por isso o slug é único em toda a instalação (§12.6).
+        Rascunho, página despublicada ou arquivada responde `404`.
+      operationId: obterPaginaPublica
+      x-responsavel: Giovanna Castro Freitas
+      x-situacao: previsto
+      security: []
+      responses:
+        '200':
+          description: Página publicada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PaginaPublicada' }
+        '404':
+          description: Slug inexistente ou página fora do ar.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '429': { $ref: '#/components/responses/LimiteExcedido' }
+
+  # ════════════════════════════════════════════════════════════════════
+  #  PÚBLICO — CHATBOT, VISITAS E ORIGEM — Pablo (tela 15)
+  # ════════════════════════════════════════════════════════════════════
+
+  /public/landing/paginas/{slug}/visualizacoes:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+    post:
+      tags: [Público — Chatbot e origem]
+      summary: Registrar visita à landing page
+      description: Grava a visita com a origem (UTM e página de referência) para as métricas da tela 11.
+      operationId: registrarVisualizacao
+      x-responsavel: Pablo Leandro Gloria
+      x-situacao: previsto
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                origem: { $ref: '#/components/schemas/Origem' }
+      responses:
+        '200': { $ref: '#/components/responses/SucessoSemDados' }
+        '404':
+          description: Página fora do ar.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '429': { $ref: '#/components/responses/LimiteExcedido' }
+
+  /public/landing/formularios/{chavePublica}/inicios:
+    parameters:
+      - $ref: '#/components/parameters/ChavePublica'
+    post:
+      tags: [Público — Chatbot e origem]
+      summary: Registrar início de preenchimento
+      description: |
+        Chamado pelo `form.js` na primeira interação do visitante com um campo. Abandono =
+        inícios sem conclusão no período.
+      operationId: registrarInicioPreenchimento
+      x-responsavel: Pablo Leandro Gloria
+      x-situacao: previsto
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paginaSlug:
+                  type: string
+                  nullable: true
+                  description: Slug da landing page, quando o formulário está dentro de uma.
+                origem: { $ref: '#/components/schemas/Origem' }
+      responses:
+        '200': { $ref: '#/components/responses/SucessoSemDados' }
+        '403': { $ref: '#/components/responses/DominioNaoAutorizado' }
+        '404':
+          description: Chave inexistente, formulário excluído ou inativo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '429': { $ref: '#/components/responses/LimiteExcedido' }
+
+  /public/landing/formularios/{chavePublica}/sessoes:
+    parameters:
+      - $ref: '#/components/parameters/ChavePublica'
+    post:
+      tags: [Público — Chatbot e origem]
+      summary: Iniciar conversa do chatbot
+      description: |
+        Cria a sessão no servidor e devolve a primeira pergunta. O `sessaoId` funciona como
+        segredo da conversa: só quem o recebeu continua a sessão.
+      operationId: iniciarSessaoChatbot
+      x-responsavel: Pablo Leandro Gloria
+      x-situacao: previsto
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paginaSlug:
+                  type: string
+                  nullable: true
+                origem: { $ref: '#/components/schemas/Origem' }
+      responses:
+        '201':
+          description: Sessão criada
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PassoChatbot' }
+        '403': { $ref: '#/components/responses/DominioNaoAutorizado' }
+        '404':
+          description: Formulário inexistente, inativo ou sem modo chatbot configurado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '429': { $ref: '#/components/responses/LimiteExcedido' }
+
+  /public/landing/formularios/{chavePublica}/sessoes/{sessaoId}/respostas:
+    parameters:
+      - $ref: '#/components/parameters/ChavePublica'
+      - $ref: '#/components/parameters/SessaoId'
+    post:
+      tags: [Público — Chatbot e origem]
+      summary: Responder a pergunta atual (salvamento parcial)
+      description: |
+        Valida a resposta com as mesmas regras do formulário e grava na sessão. Assim que um
+        e-mail ou telefone válido é obtido **e o consentimento já foi aceito**, o lead é
+        considerado capturado e o evento `landing.chatbot.lead_capturado` é publicado, mesmo
+        que a conversa não chegue ao fim.
+
+        A resposta traz só a próxima pergunta — nunca as respostas já dadas.
+      operationId: responderChatbot
+      x-responsavel: Pablo Leandro Gloria
+      x-situacao: previsto
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [campoId, valor]
+              properties:
+                campoId: { type: string, format: uuid }
+                valor:
+                  description: Texto, número, booleano ou lista, conforme o tipo do campo.
+                  oneOf:
+                    - type: string
+                    - type: number
+                    - type: boolean
+                    - type: array
+                      items: { type: string }
+      responses:
+        '200':
+          description: Resposta aceita; próxima pergunta ou fim da conversa
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PassoChatbot' }
+        '400':
+          description: Valor inválido para o tipo do campo; a mesma pergunta deve ser repetida.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '403': { $ref: '#/components/responses/DominioNaoAutorizado' }
+        '404':
+          description: Sessão inexistente, de outro formulário ou já concluída.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '429': { $ref: '#/components/responses/LimiteExcedido' }
+
+  /public/landing/formularios/{chavePublica}/sessoes/{sessaoId}/consentimento:
+    parameters:
+      - $ref: '#/components/parameters/ChavePublica'
+      - $ref: '#/components/parameters/SessaoId'
+    post:
+      tags: [Público — Chatbot e origem]
+      summary: Registrar o aceite do consentimento na conversa
+      description: |
+        O widget pede o consentimento antes da primeira pergunta de contato (e-mail ou
+        telefone). O texto gravado é o do formulário no momento do aceite.
+      operationId: consentirChatbot
+      x-responsavel: Pablo Leandro Gloria
+      x-situacao: previsto
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [aceito]
+              properties:
+                aceito: { type: boolean, enum: [true] }
+      responses:
+        '200':
+          description: Consentimento registrado; próxima pergunta
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PassoChatbot' }
+        '400':
+          description: '`aceito` diferente de `true` (`CONSENTIMENTO_OBRIGATORIO`).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '404':
+          description: Sessão inexistente, de outro formulário ou já concluída.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '429': { $ref: '#/components/responses/LimiteExcedido' }
+
+  /public/landing/formularios/{chavePublica}/sessoes/{sessaoId}/concluir:
+    parameters:
+      - $ref: '#/components/parameters/ChavePublica'
+      - $ref: '#/components/parameters/SessaoId'
+    post:
+      tags: [Público — Chatbot e origem]
+      summary: Concluir a conversa e gerar o envio
+      description: |
+        Monta o envio com as respostas da sessão e segue o mesmo caminho de
+        `POST /public/landing/formularios/{chavePublica}/envios` (consentimento, validação,
+        gravação e `landing.formulario.recebido`).
+      operationId: concluirChatbot
+      x-responsavel: Pablo Leandro Gloria
+      x-situacao: previsto
+      security: []
+      responses:
+        '200':
+          description: Conversa concluída
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ConfirmacaoEnvio' }
+        '400':
+          description: Faltam respostas obrigatórias ou o consentimento (`CAMPO_OBRIGATORIO`, `CONSENTIMENTO_OBRIGATORIO`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '404':
+          description: Sessão inexistente, de outro formulário ou já concluída.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeErro' }
+        '429': { $ref: '#/components/responses/LimiteExcedido' }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token RS256 emitido pelo identity e validado pelo JWKS (§4.2).
+
+  headers:
+    Location:
+      description: Caminho do recurso criado (§8.4).
+      schema: { type: string }
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CampoId:
+      name: campoId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    BlocoId:
+      name: blocoId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SessaoId:
+      name: sessaoId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ChavePublica:
+      name: chavePublica
+      in: path
+      required: true
+      description: Chave pública do formulário (no MR, `formKey`). Não é o id interno.
+      schema: { type: string, example: "fk_7Gq2pX9a" }
+    Slug:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', example: "black-friday-2026" }
+    Pagina:
+      name: pagina
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    Tamanho:
+      name: tamanho
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Ordenar:
+      name: ordenar
+      in: query
+      description: '`campo,direcao`. Ex.: `criadoEm,desc`.'
+      schema: { type: string, example: 'criadoEm,desc' }
+    De:
+      name: de
+      in: query
+      required: true
+      schema: { type: string, format: date, example: '2026-09-01' }
+    Ate:
+      name: ate
+      in: query
+      required: true
+      schema: { type: string, format: date, example: '2026-09-30' }
+    FiltroPaginaId:
+      name: paginaId
+      in: query
+      schema: { type: string, format: uuid }
+    FiltroFormularioId:
+      name: formularioId
+      in: query
+      schema: { type: string, format: uuid }
+    FiltroCampanha:
+      name: campanha
+      in: query
+      description: Valor de utm_campaign.
+      schema: { type: string }
+
+  responses:
+    SucessoSemDados:
+      description: Sucesso, sem dados de retorno
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+          example: { success: true, data: null, message: null, errors: [] }
+    FormularioCriado:
+      description: Formulário criado
+      headers:
+        Location: { $ref: '#/components/headers/Location' }
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Formulario' }
+    CampoCriado:
+      description: Campo criado
+      headers:
+        Location: { $ref: '#/components/headers/Location' }
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Campo' }
+    PaginaCriada:
+      description: Landing page criada
+      headers:
+        Location: { $ref: '#/components/headers/Location' }
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: { $ref: '#/components/schemas/LandingPage' }
+    BlocoCriado:
+      description: Bloco criado
+      headers:
+        Location: { $ref: '#/components/headers/Location' }
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Bloco' }
+    ErroValidacao:
+      description: Dado inválido; `errors` detalha campo a campo
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EnvelopeErro' }
+          example:
+            success: false
+            data: null
+            message: Não foi possível salvar o formulário.
+            errors:
+              - campo: nome
+                codigo: CAMPO_OBRIGATORIO
+                detalhe: O nome do formulário é obrigatório.
+    NaoAutenticado:
+      description: Sem token, token inválido ou expirado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EnvelopeErro' }
+          example: { success: false, data: null, message: "Sessão expirada.", errors: [] }
+    SemPermissao:
+      description: Autenticado, mas sem a permissão exigida
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EnvelopeErro' }
+          example: { success: false, data: null, message: "Você não tem permissão para esta ação.", errors: [] }
+    NaoEncontrado:
+      description: Não existe ou pertence a outro tenant (§8.4)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EnvelopeErro' }
+          example: { success: false, data: null, message: "Registro não encontrado.", errors: [] }
+    SlugDuplicado:
+      description: Slug já usado por outra landing page
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EnvelopeErro' }
+          example:
+            success: false
+            data: null
+            message: Este endereço já está em uso.
+            errors:
+              - campo: slug
+                codigo: SLUG_DUPLICADO
+                detalhe: Escolha outro endereço para a página.
+    DominioNaoAutorizado:
+      description: Requisição vinda de um site fora da lista de domínios autorizados (RF27)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EnvelopeErro' }
+          example:
+            success: false
+            data: null
+            message: Este formulário não pode ser usado neste site.
+            errors:
+              - campo: origem
+                codigo: DOMINIO_NAO_AUTORIZADO
+                detalhe: O domínio de origem não está autorizado.
+    LimiteExcedido:
+      description: Rate limit por IP da superfície pública (§12.6)
+      headers:
+        Retry-After:
+          description: Segundos até poder tentar de novo.
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EnvelopeErro' }
+          example:
+            success: false
+            data: null
+            message: Muitas tentativas. Aguarde um pouco e tente de novo.
+            errors:
+              - campo: ip
+                codigo: LIMITE_EXCEDIDO
+                detalhe: Limite de requisições por IP atingido.
+
+  schemas:
+
+    # ── Envelope (§8.2) ────────────────────────────────────────────────
+    Envelope:
+      type: object
+      required: [success, data, message, errors]
+      properties:
+        success: { type: boolean }
+        data:
+          nullable: true
+          description: Conteúdo da resposta; `null` em erro.
+        message:
+          type: string
+          nullable: true
+          description: Texto que pode ser mostrado ao usuário.
+        errors:
+          type: array
+          items: { $ref: '#/components/schemas/Erro' }
+    EnvelopeErro:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            success: { type: boolean, enum: [false] }
+    Erro:
+      type: object
+      required: [campo, codigo, detalhe]
+      properties:
+        campo: { type: string, nullable: true, example: "nome" }
+        codigo: { type: string, example: "CAMPO_OBRIGATORIO" }
+        detalhe: { type: string }
+    PaginaResultado:
+      type: object
+      required: [itens, pagina, tamanho, total]
+      properties:
+        itens: { type: array, items: {} }
+        pagina: { type: integer, example: 0 }
+        tamanho: { type: integer, example: 20 }
+        total: { type: integer, example: 137 }
+    Reordenacao:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          description: Todos os ids do conjunto, na nova ordem.
+          items: { type: string, format: uuid }
+    Auditoria:
+      type: object
+      properties:
+        criadoEm: { type: string, format: date-time, readOnly: true }
+        atualizadoEm: { type: string, format: date-time, readOnly: true }
+        criadoPor: { type: string, format: uuid, readOnly: true }
+        atualizadoPor: { type: string, format: uuid, readOnly: true }
+
+    # ── Formulários (Camila) ───────────────────────────────────────────
+    StatusFormulario:
+      type: string
+      enum: [ATIVO, INATIVO]
+    ModoExibicao:
+      type: string
+      enum: [TRADICIONAL, PASSO_A_PASSO, CHATBOT]
+      description: Tradicional = todos os campos; passo a passo = um por vez com barra de progresso; chatbot = conversa.
+    TipoCampo:
+      type: string
+      enum: [TEXTO, TEXTO_LONGO, EMAIL, TELEFONE, CNPJ, CPF, NUMERO, DATA, LISTA_OPCOES, MULTIPLA_ESCOLHA, CAIXA_MARCACAO]
+    FormularioEntrada:
+      type: object
+      required: [nome, modoExibicao]
+      properties:
+        nome: { type: string, maxLength: 120, example: "Contato — Black Friday" }
+        descricao: { type: string, nullable: true, maxLength: 500 }
+        modoExibicao: { $ref: '#/components/schemas/ModoExibicao' }
+        textoConsentimento:
+          type: string
+          description: Texto LGPD mostrado ao visitante; o texto vigente no aceite é o que fica registrado no envio.
+          example: Autorizo o uso dos meus dados para contato comercial, conforme a Política de Privacidade.
+        mensagemSucesso: { type: string, nullable: true, example: "Recebemos seus dados. Em breve entraremos em contato." }
+        urlRedirecionamento: { type: string, format: uri, nullable: true }
+    FormularioResumo:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string }
+        status: { $ref: '#/components/schemas/StatusFormulario' }
+        modoExibicao: { $ref: '#/components/schemas/ModoExibicao' }
+        totalEnvios: { type: integer, readOnly: true }
+        atualizadoEm: { type: string, format: date-time }
+    Formulario:
+      allOf:
+        - type: object
+          properties:
+            id: { type: string, format: uuid, readOnly: true }
+            chavePublica: { type: string, readOnly: true, example: "fk_7Gq2pX9a" }
+            status: { $ref: '#/components/schemas/StatusFormulario' }
+            campos:
+              type: array
+              readOnly: true
+              items: { $ref: '#/components/schemas/Campo' }
+        - $ref: '#/components/schemas/FormularioEntrada'
+        - $ref: '#/components/schemas/Auditoria'
+    CampoEntrada:
+      type: object
+      required: [rotulo, tipo, obrigatorio]
+      properties:
+        rotulo: { type: string, maxLength: 200, example: "Seu melhor e-mail" }
+        tipo: { $ref: '#/components/schemas/TipoCampo' }
+        obrigatorio: { type: boolean }
+        placeholder: { type: string, nullable: true }
+        opcoes:
+          type: array
+          nullable: true
+          description: Só para LISTA_OPCOES e MULTIPLA_ESCOLHA.
+          items: { type: string }
+        mapeamentoCrm:
+          type: string
+          nullable: true
+          description: |
+            `crm_mapping` — campo do CRM que recebe o valor (ex. `contato.email`). Nulo = guardado
+            só no envio. A lista de valores válidos depende do CRM e ainda não foi entregue.
+          example: contato.email
+    Campo:
+      allOf:
+        - type: object
+          properties:
+            id: { type: string, format: uuid, readOnly: true }
+            ordem: { type: integer, readOnly: true }
+        - $ref: '#/components/schemas/CampoEntrada'
+
+    # ── Embed (Emmylio) ────────────────────────────────────────────────
+    ConfiguracaoEmbed:
+      type: object
+      properties:
+        chavePublica: { type: string, readOnly: true }
+        codigoEmbed:
+          type: string
+          readOnly: true
+          description: Trecho de HTML para colar no site externo.
+        linkHospedado:
+          type: string
+          format: uri
+          readOnly: true
+          description: Página própria do formulário (tela 13).
+        dominiosAutorizados:
+          type: array
+          items: { type: string }
+
+    # ── Chatbot (Pablo) ────────────────────────────────────────────────
+    ConfiguracaoChatbot:
+      type: object
+      required: [perguntas]
+      properties:
+        perguntas:
+          type: array
+          items:
+            type: object
+            required: [campoId, posicao, textoPergunta]
+            properties:
+              campoId: { type: string, format: uuid }
+              posicao: { type: integer, minimum: 1 }
+              textoPergunta: { type: string, maxLength: 300, example: "Qual é o seu melhor e-mail?" }
+    PassoChatbot:
+      type: object
+      properties:
+        sessaoId: { type: string, format: uuid }
+        pedirConsentimento:
+          type: boolean
+          description: Verdadeiro quando a próxima etapa é o aceite do consentimento.
+        textoConsentimento: { type: string, nullable: true }
+        proximaPergunta:
+          nullable: true
+          description: Nula quando todas as perguntas foram respondidas.
+          allOf:
+            - $ref: '#/components/schemas/CampoPublico'
+        concluida: { type: boolean }
+
+    # ── Origem (Pablo) ─────────────────────────────────────────────────
+    ToqueOrigem:
+      type: object
+      properties:
+        utmSource: { type: string, nullable: true, example: "instagram" }
+        utmMedium: { type: string, nullable: true, example: "cpc" }
+        utmCampaign: { type: string, nullable: true, example: "black-friday-2026" }
+        utmTerm: { type: string, nullable: true }
+        utmContent: { type: string, nullable: true }
+        referenciador: { type: string, nullable: true, description: document.referrer, example: 'https://www.google.com/' }
+        paginaEntrada: { type: string, nullable: true, description: URL em que o visitante entrou. }
+        ocorridoEm: { type: string, format: date-time }
+    Origem:
+      type: object
+      description: Primeira e última origem do visitante, guardadas pelo `form.js` no navegador.
+      properties:
+        primeira: { $ref: '#/components/schemas/ToqueOrigem' }
+        ultima: { $ref: '#/components/schemas/ToqueOrigem' }
+
+    # ── Métricas (Pablo) ───────────────────────────────────────────────
+    Metricas:
+      type: object
+      properties:
+        visitas: { type: integer, example: 1240 }
+        iniciosPreenchimento: { type: integer, example: 310 }
+        conclusoes: { type: integer, example: 155 }
+        abandonos: { type: integer, example: 155 }
+        taxaConversao:
+          type: number
+          description: Conclusões ÷ visitas, em pontos percentuais com até 4 casas (§8.7). `12.5` = 12,5%.
+          example: 12.5
+
+    # ── Landing pages (Giovanna) ───────────────────────────────────────
+    StatusPagina:
+      type: string
+      enum: [RASCUNHO, PUBLICADA, ARQUIVADA]
+    LandingPageEntrada:
+      type: object
+      required: [nome, slug]
+      properties:
+        nome: { type: string, maxLength: 120, example: "Black Friday 2026" }
+        slug:
+          type: string
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          maxLength: 80
+          description: Único em toda a instalação, porque identifica o tenant na superfície pública.
+          example: black-friday-2026
+        seo:
+          type: object
+          properties:
+            titulo: { type: string, maxLength: 70 }
+            descricao: { type: string, maxLength: 160 }
+            imagemCompartilhamento: { type: string, format: uri, nullable: true }
+            indexar: { type: boolean, default: true }
+        rastreamento:
+          type: object
+          description: Identificadores de rastreamento da página. Chaves a definir pela frente.
+          additionalProperties: { type: string }
+        tema:
+          type: object
+          properties:
+            corPrimaria: { type: string, example: '#2563EB' }
+            corFundo: { type: string, example: '#FFFFFF' }
+            fonte: { type: string, example: "Inter" }
+    LandingPageResumo:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string }
+        slug: { type: string }
+        status: { $ref: '#/components/schemas/StatusPagina' }
+        totalVisitas: { type: integer, readOnly: true }
+        totalEnvios: { type: integer, readOnly: true }
+        publicadaEm: { type: string, format: date-time, nullable: true }
+    LandingPage:
+      allOf:
+        - type: object
+          properties:
+            id: { type: string, format: uuid, readOnly: true }
+            status: { $ref: '#/components/schemas/StatusPagina' }
+            publicadaEm: { type: string, format: date-time, nullable: true, readOnly: true }
+            temAlteracaoNaoPublicada:
+              type: boolean
+              readOnly: true
+              description: O rascunho mudou depois da última publicação.
+            blocos:
+              type: array
+              readOnly: true
+              items: { $ref: '#/components/schemas/Bloco' }
+        - $ref: '#/components/schemas/LandingPageEntrada'
+        - $ref: '#/components/schemas/Auditoria'
+    TipoBloco:
+      type: string
+      enum: [TITULO, TEXTO, IMAGEM, BENEFICIOS, DEPOIMENTOS, FORMULARIO, CHAMADA_ACAO, PERGUNTAS_FREQUENTES, RODAPE]
+    BlocoEntrada:
+      type: object
+      required: [tipo, conteudo]
+      properties:
+        tipo: { $ref: '#/components/schemas/TipoBloco' }
+        conteudo:
+          type: object
+          description: Propriedades do bloco, livres por tipo (guardadas como JSON).
+          additionalProperties: true
+          example: { titulo: Até 40% de desconto, subtitulo: Só até domingo }
+        formularioId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Obrigatório quando `tipo` = FORMULARIO.
+    Bloco:
+      allOf:
+        - type: object
+          properties:
+            id: { type: string, format: uuid, readOnly: true }
+            ordem: { type: integer, readOnly: true }
+        - $ref: '#/components/schemas/BlocoEntrada'
+    PaginaPublicada:
+      type: object
+      properties:
+        slug: { type: string }
+        seo:
+          type: object
+          properties:
+            titulo: { type: string }
+            descricao: { type: string }
+            imagemCompartilhamento: { type: string, nullable: true }
+            indexar: { type: boolean }
+        html:
+          type: string
+          description: HTML congelado gerado na publicação.
+        formularios:
+          type: array
+          description: Chaves públicas dos formulários embutidos, para o `form.js`.
+          items: { type: string }
+        publicadaEm: { type: string, format: date-time }
+
+    # ── Superfície pública (Emmylio / Pablo) ───────────────────────────
+    CampoPublico:
+      type: object
+      description: Só o necessário para renderizar — sem `mapeamentoCrm` nem dados internos.
+      properties:
+        id: { type: string, format: uuid }
+        rotulo: { type: string }
+        tipo: { $ref: '#/components/schemas/TipoCampo' }
+        obrigatorio: { type: boolean }
+        placeholder: { type: string, nullable: true }
+        opcoes: { type: array, nullable: true, items: { type: string } }
+        ordem: { type: integer }
+        textoPergunta:
+          type: string
+          nullable: true
+          description: Só no modo CHATBOT.
+    FormularioPublico:
+      type: object
+      properties:
+        chavePublica: { type: string }
+        nome: { type: string }
+        modoExibicao: { $ref: '#/components/schemas/ModoExibicao' }
+        textoConsentimento: { type: string }
+        campos:
+          type: array
+          items: { $ref: '#/components/schemas/CampoPublico' }
+    EnvioPublico:
+      type: object
+      required: [respostas, consentimento]
+      properties:
+        respostas:
+          type: object
+          description: Mapa `campoId → valor`.
+          additionalProperties: {}
+          example:
+            8d1e5a2c-0000-4000-8000-000000000001: Ana Souza
+            8d1e5a2c-0000-4000-8000-000000000002: ana@empresa.com.br
+        consentimento:
+          type: object
+          required: [aceito]
+          properties:
+            aceito: { type: boolean, enum: [true] }
+        paginaSlug:
+          type: string
+          nullable: true
+          description: Slug da landing page, quando o formulário está dentro de uma.
+        origem: { $ref: '#/components/schemas/Origem' }
+    ConfirmacaoEnvio:
+      type: object
+      properties:
+        mensagemSucesso: { type: string }
+        urlRedirecionamento: { type: string, format: uri, nullable: true }
