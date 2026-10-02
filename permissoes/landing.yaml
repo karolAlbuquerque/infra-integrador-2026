@@ -1,15 +1,100 @@
 # Permissões do módulo Landing Pages e Formulários. Formato: modulo.recurso.acao (Contrato §5.1).
 #
-# ATENÇÃO: este arquivo cobre, por ora, só a parte de Rafael (envios e evento de lead).
-# As permissões de páginas, blocos, chatbot, embed e métricas entram aqui conforme o
-# restante do time (Camila, Giovanna, Emmylio, Pablo) definir as suas, antes do PR final
-# do módulo em infra-integrador-2026.
+# Padrão: modulo.recurso.acao, minúsculas, ações só da lista do Prompt Mestre §3
+# (ver, criar, editar, excluir, exportar, aprovar, administrar, compartilhar),
+# mais landing.acessar para o menu.
+
 modulo: landing
 permissoes:
+
+  # ── Menu ──────────────────────────────────────────────────────────────
   - codigo: landing.acessar
-    descricao: Ver o módulo Landing Pages e Formulários no menu
+    descricao: Mostra o módulo Landing Pages e Formulários no menu.
     perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
 
   - codigo: landing.envio.ver
     descricao: Ver a lista de envios recebidos e o detalhe de cada um (respostas, origem e consentimento)
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  # ── Formulários — Camila Martins Sousa (telas 4 e 5) ──────────────────
+  - codigo: landing.formulario.ver
+    descricao: Listar e abrir formulários e seus campos; ver o código de embed.
+    responsavel: Camila Martins Sousa
+    telas: [4, 5, 10]
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: landing.formulario.criar
+    descricao: Criar e duplicar formulários.
+    responsavel: Camila Martins Sousa
+    telas: [4, 5]
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: landing.formulario.editar
+    descricao: Editar formulário e campos (incluindo o mapeamento para o CRM), reordenar, duplicar campo, ativar e desativar.
+    responsavel: Camila Martins Sousa
+    telas: [5]
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: landing.formulario.excluir
+    descricao: Excluir formulário (exclusão lógica).
+    responsavel: Camila Martins Sousa
+    telas: [4]
+    perfisPadrao: [ADMINISTRADOR, GESTOR]
+
+  # ── Embed — Emmylio Chaves Queiroz (tela 10) ──────────────────────────
+  - codigo: landing.formulario.compartilhar
+    descricao: Manter a lista de domínios autorizados a usar o formulário via embed (RF27).
+    responsavel: Emmylio Chaves Queiroz
+    telas: [10]
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  # ── Chatbot — Pablo Leandro Gloria (tela 6) ───────────────────────────
+  - codigo: landing.chatbot.ver
+    descricao: Ver a ordem e o texto das perguntas do chatbot.
+    responsavel: Pablo Leandro Gloria
+    telas: [6]
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: landing.chatbot.editar
+    descricao: Alterar a ordem e o texto das perguntas do chatbot.
+    responsavel: Pablo Leandro Gloria
+    telas: [6]
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  # ── Landing pages — Giovanna Castro Freitas (telas 1, 2 e 3) ──────────
+  - codigo: landing.pagina.ver
+    descricao: Listar e abrir landing pages e seus blocos.
+    responsavel: Giovanna Castro Freitas
+    telas: [1, 2, 3]
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: landing.pagina.criar
+    descricao: Criar landing page.
+    responsavel: Giovanna Castro Freitas
+    telas: [1]
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: landing.pagina.editar
+    descricao: Editar blocos e configurações (slug, SEO, rastreamento, tema) e enviar imagens.
+    responsavel: Giovanna Castro Freitas
+    telas: [2, 3]
+    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
+
+  - codigo: landing.pagina.aprovar
+    descricao: Publicar, despublicar e arquivar landing page. "aprovar" é a ação da lista do Prompt Mestre mais próxima de publicar.
+    responsavel: Giovanna Castro Freitas
+    telas: [1, 2]
+    perfisPadrao: [ADMINISTRADOR, GESTOR]
+
+  - codigo: landing.pagina.excluir
+    descricao: Excluir landing page (exclusão lógica).
+    responsavel: Giovanna Castro Freitas
+    telas: [1]
+    perfisPadrao: [ADMINISTRADOR, GESTOR]
+
+  # ── Métricas — Pablo Leandro Gloria (tela 11) ─────────────────────────
+  - codigo: landing.metrica.ver
+    descricao: Ver visitas, inícios, conclusões, abandonos e conversão por página e por campanha.
+    responsavel: Pablo Leandro Gloria
+    telas: [11]
     perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
