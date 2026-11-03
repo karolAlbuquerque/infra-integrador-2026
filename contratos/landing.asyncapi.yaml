@@ -3,9 +3,9 @@ info:
   title: Landing Pages e Formulários — eventos publicados
   version: 0.1.0
   description: |
-    Eventos que o módulo Landing publica na exchange `landing.eventos`. Documenta, por ora,
-    só o evento de responsabilidade de Rafael (envios e evento de lead) — os demais eventos
-    do módulo, se existirem, entram aqui conforme o restante do time definir os seus.
+    Eventos que o módulo Landing publica na exchange landing.eventos. Este documento
+    contempla todas as partes e eventos implementados pelo módulo, unificando as frentes
+    de trabalho (como envios tradicionais e captura de lead via chatbot).
 
     `landing.formulario.recebido` é publicado depois que o envio é validado, a duplicidade é
     verificada, o consentimento é registrado e — quando o lead é novo — o módulo já chamou a
@@ -27,6 +27,8 @@ channels:
     messages:
       formularioRecebido:
         $ref: '#/components/messages/FormularioRecebido'
+      chatbotLeadCapturado:
+        $ref: '#/components/messages/LandingChatbotLeadCapturado'
     bindings:
       amqp:
         is: routingKey
@@ -46,6 +48,28 @@ operations:
       $ref: '#/channels/eventos'
     messages:
       - $ref: '#/channels/eventos/messages/formularioRecebido'
+
+  publicarChatbotLeadCapturado:
+    action: send
+    title: Lead capturado no meio da conversa do chatbot
+    summary: Responsável — Pablo Leandro Gloria (frente de chatbot). Situação — proposta.
+    description: |
+      Publicado **uma vez por sessão**, na primeira resposta que traz e-mail ou telefone
+      válido, desde que o consentimento já tenha sido aceito na conversa.
+
+      Se a conversa chegar ao fim, a frente de envios publica também
+      `landing.formulario.recebido` com o mesmo `sessaoId`; os consumidores usam esse campo
+      para tratar os dois como o mesmo lead (formato a alinhar com Rafael e Marketing).
+    channel:
+      $ref: '#/channels/eventos'
+    messages:
+      - $ref: '#/channels/eventos/messages/chatbotLeadCapturado'
+    bindings:
+      amqp:
+        cc: [landing.chatbot.lead_capturado]
+        deliveryMode: 2
+        userId: mq_landing
+        bindingVersion: 0.3.0
 
 components:
   messages:
@@ -81,6 +105,50 @@ components:
                     enum: [formulario, landing_page, embed, chatbot]
                     description: Como o formulário foi acessado pelo visitante
 
+    LandingChatbotLeadCapturado:
+      name: landing.chatbot.lead_capturado
+      title: Lead capturado pelo chatbot
+      contentType: application/json
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              tipo:
+                const: landing.chatbot.lead_capturado
+              moduloOrigem:
+                const: landing
+              versao:
+                const: 1
+              dados:
+                $ref: '#/components/schemas/DadosChatbotLeadCapturado'
+      examples:
+        - name: leadDoInstagram
+          payload:
+            id: 0b8e6f3a-6c1d-4f3e-9a51-2d7c4b8e1f00
+            tipo: landing.chatbot.lead_capturado
+            versao: 1
+            tenantId: 3a7e91b0-1c2d-4e5f-8a9b-0c1d2e3f4a5b
+            moduloOrigem: landing
+            ocorridoEm: '2026-10-01T22:14:05Z'
+            usuarioId: null
+            correlacaoId: c41d8e2a-77b0-4c1e-9f3a-5b6c7d8e9f01
+            dados:
+              sessaoId: 5f2a9c11-3b4d-4e6f-8a1b-2c3d4e5f6a7b
+              formularioId: 9f1c4e2a-0d1e-4f2a-8b3c-4d5e6f7a8b9c
+              paginaId: null
+              contato:
+                nome: Ana Souza
+                email: ana@empresa.com.br
+                telefone: null
+              origem:
+                utmSource: instagram
+                utmMedium: cpc
+                utmCampaign: black-friday-2026
+              consentimento:
+                aceito: true
+                aceitoEm: '2026-10-01T22:13:40Z'
+
   schemas:
     Envelope:
       type: object
@@ -95,3 +163,39 @@ components:
         usuarioId: { type: [string, 'null'], format: uuid }
         correlacaoId: { type: [string, 'null'] }
         dados: { type: object }
+
+    DadosChatbotLeadCapturado:
+      type: object
+      required: [sessaoId, formularioId, contato, consentimento]
+      properties:
+        sessaoId:
+          type: string
+          format: uuid
+          description: Liga este evento ao `landing.formulario.recebido` da mesma conversa.
+        formularioId:
+          type: string
+          format: uuid
+        paginaId:
+          type: [string, 'null']
+          format: uuid
+          description: Landing page onde o chatbot estava, quando houver.
+        contato:
+          type: object
+          description: Só o mínimo para o Marketing agir (§9.7 proíbe dado pessoal além do necessário).
+          properties:
+            nome: { type: [string, 'null'] }
+            email: { type: [string, 'null'], format: email }
+            telefone: { type: [string, 'null'], description: 'Só dígitos, com DDD. Ex.: 62999998888' }
+        origem:
+          type: object
+          description: Última origem do visitante (campanha que trouxe o lead).
+          properties:
+            utmSource: { type: [string, 'null'] }
+            utmMedium: { type: [string, 'null'] }
+            utmCampaign: { type: [string, 'null'] }
+        consentimento:
+          type: object
+          required: [aceito, aceitoEm]
+          properties:
+            aceito: { const: true }
+            aceitoEm: { type: string, format: date-time }
