@@ -8,8 +8,10 @@ info:
     Integração §14.1. Endpoints usados só pelo front do próprio módulo (painel, configurações,
     qualificação, modelos de mensagem, ciclo de vida) não entram aqui (`contratos/README.md` do infra).
 
-    Nesta versão: saúde do serviço (§8.5), busca global da casca (§8.6), definição do
-    formulário lida pelo Landing e resumo do lead para os módulos interessados.
+    Nesta versão: saúde do serviço (§8.5), busca global da casca (§8.6) e resumo do lead
+    (individual e em lote, §9.4) para os módulos interessados. Para ler as respostas dos
+    formulários na fila de leads, o Marketing consome do módulo Landing, por token de serviço,
+    as rotas `GET /api/landing/envios/{id}` e `GET /api/landing/formularios/{id}/resumo`.
     Rotas públicas (`/public/marketing/**`) não são consumidas por outros módulos e ficam
     documentadas no documento norteador do grupo.
   license:
@@ -23,8 +25,6 @@ servers:
 tags:
   - name: busca
     description: Busca global da casca
-  - name: formulario
-    description: Definição dos campos do formulário da landing page, lida pelo Landing
   - name: lead
     description: Informações de lead disponibilizadas para outros módulos
   - name: saude
@@ -75,47 +75,6 @@ paths:
         '400': { $ref: '#/components/responses/DadosInvalidos' }
         '401': { $ref: '#/components/responses/NaoAutenticado' }
         '403': { $ref: '#/components/responses/SemPermissao' }
-
-  /api/marketing/formularios/{id}:
-    get:
-      tags: [formulario]
-      operationId: obterFormularioAtivo
-      summary: Versão ativa de um formulário de captação
-      description: |
-        Exige `marketing.formulario.ver`, que declara `servicos: [landing]`: o Landing chama com
-        token de serviço e `X-Tenant-Id`, direto em `http://marketing:8087`. Devolve sempre a
-        versão ativa. Uma versão publicada não muda; cada publicação gera uma versão nova e o
-        evento `marketing.formulario.publicado`. Formulário nunca publicado responde 404.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        '200':
-          description: Versão ativa
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Envelope'
-                  - properties:
-                      data: { $ref: '#/components/schemas/FormularioVersao' }
-              example:
-                success: true
-                data:
-                  id: 9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
-                  nome: Consultoria — Black Friday
-                  versao: 3
-                  publicadoEm: '2026-09-20T18:00:00Z'
-                  campos:
-                    - { id: a1b2c3d4-0000-4000-8000-000000000001, chave: nome, label: Nome, tipo: texto, obrigatorio: true, fixo: true, ordem: 1, opcoes: null }
-                    - { id: c1a2b3c4-0000-4000-8000-000000000005, chave: cargo, label: 'Qual o seu cargo?', tipo: lista, obrigatorio: true, fixo: false, ordem: 5, opcoes: [Decisor, Sócio, Gerente, Analista, Operacional, Outros] }
-                message: null
-                errors: []
-        '401': { $ref: '#/components/responses/NaoAutenticado' }
-        '403': { $ref: '#/components/responses/SemPermissao' }
-        '404': { $ref: '#/components/responses/NaoEncontrado' }
 
   /api/marketing/leads/resumo:
     get:
@@ -269,39 +228,6 @@ components:
         titulo: { type: string, description: 'Nome do lead, ou o e-mail quando não há nome' }
         subtitulo: { type: string, description: Etapa e origem do lead; string vazia quando não há etapa }
         rota: { type: string, description: Relativa ao urlFrontend do módulo }
-
-    FormularioVersao:
-      type: object
-      required: [id, nome, versao, publicadoEm, campos]
-      properties:
-        id: { type: string, format: uuid, description: 'É o formularioId dos eventos do Landing' }
-        nome: { type: string }
-        versao: { type: integer, minimum: 1, description: 'É o formularioVersao dos eventos do Landing' }
-        publicadoEm: { type: string, format: date-time }
-        campos:
-          type: array
-          items: { $ref: '#/components/schemas/Campo' }
-
-    Campo:
-      type: object
-      required: [id, chave, label, tipo, obrigatorio, fixo, ordem]
-      properties:
-        id: { type: string, format: uuid, description: 'É o campoId das respostas no Landing' }
-        chave:
-          type: string
-          pattern: '^[a-z][a-z0-9_]*$'
-          description: Estável entre versões e formulários do tenant; usada na pontuação do lead
-        label: { type: string }
-        tipo:
-          type: string
-          enum: [texto, email, telefone, whatsapp, cnpj, cpf, lista, checkbox, radio, textarea, data]
-        obrigatorio: { type: boolean }
-        fixo: { type: boolean, description: 'true em nome, email, telefone e consentimento' }
-        ordem: { type: integer, minimum: 1 }
-        opcoes:
-          type: [array, 'null']
-          items: { type: string }
-          description: Obrigatório só quando tipo = lista, radio ou checkbox
 
     ResumoLead:
       type: object

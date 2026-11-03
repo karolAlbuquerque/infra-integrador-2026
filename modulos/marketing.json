@@ -11,8 +11,6 @@
   "itensSubmenu": [
     { "rota": "/painel",        "nome": "Painel",        "permissao": "marketing.dashboard.ver" },
     { "rota": "/leads",         "nome": "Leads",         "permissao": "marketing.lead.ver" },
-    { "rota": "/formularios",   "nome": "Formulários",   "permissao": "marketing.formulario.ver" },
     { "rota": "/configuracoes", "nome": "Configurações", "permissao": "marketing.configuracao.ver" }
   ]
-  
 }

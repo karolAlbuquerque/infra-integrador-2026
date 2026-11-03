@@ -56,12 +56,3 @@ permissoes:
   - codigo: marketing.automacao.editar
     descricao: Editar o ciclo de vida do lead (tentativas e prazos de retenção LGPD)
     perfisPadrao: [ADMINISTRADOR, MARKETING]
-
-  - codigo: marketing.formulario.ver
-    descricao: Ver os campos dos formulários de captação
-    perfisPadrao: [ADMINISTRADOR, GESTOR, MARKETING]
-    servicos: [landing]
-
-  - codigo: marketing.formulario.editar
-    descricao: Criar, editar e publicar os campos dos formulários de captação
-    perfisPadrao: [ADMINISTRADOR, MARKETING]
