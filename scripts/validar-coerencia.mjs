@@ -95,7 +95,7 @@ for (const { arquivo, registro } of registros) {
 // não entrega, a dívida fica listada aqui e sai como aviso: o main não trava por pendência de outro
 // grupo, mas ela também não desaparece do log do CI.
 const SEM_OPENAPI_AINDA = new Map([
-  ["landing", "issue #24"],
+  // ["codigo", "issue #N"] — vazia desde que o landing publicou o OpenAPI (#26)
 ]);
 
 const contratos = new Set(await readdir(contratosDir));
