@@ -94,13 +94,13 @@ Rotina automatizada em `scripts/backup-banco.sh` (Requisito RNF10), que gera o d
 customizado (`pg_dump -Fc`), aplica permissão `600` e apaga cópias com mais de sete dias:
 
 ```bash
-scripts/backup-banco.sh /root/centinela/backups
+scripts/backup-banco.sh /root/centinela/staging/backups
 ```
 
 Agendamento diário no `cron` do servidor de staging (04h00):
 
 ```cron
-0 4 * * * /root/centinela/staging/infra-integrador-2026/scripts/backup-banco.sh /root/centinela/backups >> /var/log/centinela-backup.log 2>&1
+0 4 * * * /root/centinela/staging/infra-integrador-2026/scripts/backup-banco.sh /root/centinela/staging/backups >> /var/log/centinela-backup.log 2>&1
 ```
 
 Restaurar num banco vazio (apaga o que houver):
