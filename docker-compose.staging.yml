@@ -47,7 +47,7 @@ services:
     mem_limit: 512m
 
   mailpit:
-    ports: !reset
+    ports: !override
       - "127.0.0.1:${MAILPIT_PORTA_LOCAL:-18025}:8025"
     mem_limit: 128m
 
