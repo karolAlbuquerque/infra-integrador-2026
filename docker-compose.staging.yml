@@ -1,0 +1,139 @@
+# Override de staging/produção para o docker-compose.yml (Requisitos RNF01 e RNF09).
+#
+# Uso (pelo script scripts/subir-staging.sh):
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml --profile plataforma up -d
+#
+# O que este arquivo muda em relação ao docker-compose.yml de desenvolvimento:
+#   1. Remove o mapeamento de portas no host (!reset []) de banco, broker, identity, casca, gateway
+#      e módulos. No Linux, "ports:" do Docker escreve no iptables passando por cima do ufw; sem
+#      "ports:", nada fica exposto na internet nem conflita com portas já usadas na máquina (5432,
+#      3000, 8080).
+#   2. Adiciona o Caddy na borda (portas 80 e 443), com HTTPS automático e repasse do IP real.
+#   3. Prende o painel do Mailpit em 127.0.0.1:18025 (acessível apenas via túnel SSH).
+#   4. Define mem_limit em cada contêiner para que o -XX:MaxRAMPercentage=75 das JVMs calcule o heap
+#      sobre o limite do contêiner (512 MB), e nunca sobre a RAM inteira do servidor.
+
+services:
+
+  # ------------------------------------------------------------------ borda HTTPS (Caddy)
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: [plataforma]
+    networks: [plataforma]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PLATAFORMA_DOMINIO: ${PLATAFORMA_DOMINIO:-centinela-pi.duckdns.org}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - gateway
+    mem_limit: 128m
+
+  # ------------------------------------------------------------------ infraestrutura
+
+  postgres:
+    ports: !reset []
+    mem_limit: 512m
+
+  rabbitmq:
+    ports: !reset []
+    mem_limit: 512m
+
+  mailpit:
+    ports: !reset
+      - "127.0.0.1:${MAILPIT_PORTA_LOCAL:-18025}:8025"
+    mem_limit: 128m
+
+  # ------------------------------------------------------------------ plataforma (Grupo 2)
+
+  identity:
+    ports: !reset []
+    mem_limit: 512m
+
+  gateway:
+    ports: !reset []
+    mem_limit: 512m
+    environment:
+      CONFIAR_PROXY: "true"
+      SERVER_FORWARD_HEADERS_STRATEGY: native
+
+  casca:
+    ports: !reset []
+    mem_limit: 128m
+
+  # ------------------------------------------------------------------ módulos
+
+  crm:
+    ports: !reset []
+    mem_limit: 512m
+
+  crm-front:
+    ports: !reset []
+    mem_limit: 128m
+
+  produtos:
+    ports: !reset []
+    mem_limit: 512m
+
+  produtos-front:
+    ports: !reset []
+    mem_limit: 128m
+
+  contratos:
+    ports: !reset []
+    mem_limit: 512m
+
+  contratos-front:
+    ports: !reset []
+    mem_limit: 128m
+
+  financeiro:
+    ports: !reset []
+    mem_limit: 512m
+
+  financeiro-front:
+    ports: !reset []
+    mem_limit: 128m
+
+  chamados:
+    ports: !reset []
+    mem_limit: 512m
+
+  chamados-front:
+    ports: !reset []
+    mem_limit: 128m
+
+  marketing:
+    ports: !reset []
+    mem_limit: 512m
+
+  marketing-front:
+    ports: !reset []
+    mem_limit: 128m
+
+  landing:
+    ports: !reset []
+    mem_limit: 512m
+
+  landing-front:
+    ports: !reset []
+    mem_limit: 128m
+
+  exemplo:
+    ports: !reset []
+    mem_limit: 512m
+
+  exemplo-front:
+    ports: !reset []
+    mem_limit: 128m
+
+volumes:
+  caddy_data:
+  caddy_config:

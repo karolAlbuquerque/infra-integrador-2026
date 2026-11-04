@@ -24,15 +24,17 @@ produção, criado pela migration, e o primeiro acesso é pelo convite do `ADMIN
 ```bash
 git clone https://github.com/karolAlbuquerque/infra-integrador-2026.git
 cd infra-integrador-2026
-scripts/gerar-env.sh                          # senhas aleatórias, chave RS256 do JWT e chave do segundo fator
-# editar o .env: IDENTITY_PERFIL=, PLATAFORMA_URL, ADMIN_INICIAL_EMAIL e _NOME, CORS_ORIGENS=
-docker compose pull
-docker compose --profile plataforma --profile modulos up -d
+scripts/gerar-env.sh --staging                # senhas aleatórias, chaves RS256/AES, perfil limpo e chmod 600
+scripts/subir-staging.sh                      # sobe infra, plataforma + Caddy HTTPS e os módulos já publicados
 ```
 
 - Nunca `--build` nem o `dev/compose.build.yml` do plataforma fora do desenvolvimento: o que roda é
   o que o CI publicou.
-- O `.env` fica só no servidor. A chave do JWT (`IDENTITY_JWT_CHAVE_PRIVADA`) assina todos os tokens;
+- O override `docker-compose.staging.yml` remove o mapeamento de portas no host (`!reset []`) de
+  banco, broker, identity, casca, gateway e módulos, adiciona o Caddy nas portas `80` e `443` com
+  certificado TLS automático para `PLATAFORMA_DOMINIO`, limita a memória de cada contêiner
+  (`mem_limit`) e prende o Mailpit em `127.0.0.1:18025`.
+- O `.env` fica só no servidor (`chmod 600`). A chave do JWT (`IDENTITY_JWT_CHAVE_PRIVADA`) assina todos os tokens;
   trocá-la derruba as sessões abertas.
 - `IDENTITY_SEGUNDO_FATOR_CHAVE` cifra os segredos do aplicativo autenticador de cada usuário. Sem
   ela o identity não sobe fora do perfil `dev`. **Trocá-la ou perdê-la invalida todos os
@@ -42,29 +44,32 @@ docker compose --profile plataforma --profile modulos up -d
 - A verificação em duas etapas é obrigatória para todos (RF10). O primeiro administrador, depois de
   definir a senha pelo convite, cadastra o aplicativo autenticador no primeiro acesso.
 - O convite do primeiro administrador sai na primeira subida com o tenant de produção vazio.
-  Sem provedor de e-mail, o link aparece no Mailpit (`http://servidor:8025`, não exposto à internet).
+  Sem provedor de e-mail, o link aparece no Mailpit (`http://127.0.0.1:18025`, acessível por túnel
+  SSH e não exposto à internet).
 
 ## 3. Atualizar
 
 ```bash
-docker compose pull
-docker compose --profile plataforma --profile modulos up -d
+scripts/subir-staging.sh
 ```
 
-As migrations rodam sozinhas na subida de cada serviço (Flyway, com o usuário `own_{modulo}`). Um
-serviço cuja migration falhar não sobe, e os outros continuam no ar. Para voltar uma versão, fixe a
-etiqueta anterior em `IMAGEM_{MODULO}` no `.env` — migration aplicada não é desfeita.
+O script atualiza a infraestrutura e a plataforma e tenta baixar cada módulo individualmente: um
+grupo cuja imagem ainda não foi publicada no GHCR não impede a plataforma nem os demais módulos de
+subirem. As migrations rodam sozinhas na subida de cada serviço (Flyway, com o usuário
+`own_{modulo}`). Um serviço cuja migration falhar não sobe, e os outros continuam no ar. Para voltar
+uma versão, fixe a etiqueta anterior em `IMAGEM_{MODULO}` no `.env` — migration aplicada não é
+desfeita.
 
-## 4. Portas
+## 4. Portas e proxy reverso
 
-Só duas portas precisam ficar abertas para fora: a 8080 (gateway) e, se houver, a 443 do proxy na
-frente dele. As demais portas publicadas pelo compose (banco, RabbitMQ, identity, módulos, Mailpit)
-existem para o desenvolvimento e devem ficar fechadas no firewall do servidor.
+Com o `docker-compose.staging.yml`, só as portas `80` e `443` do **Caddy** ficam abertas para fora;
+as demais portas do `docker-compose.yml` de desenvolvimento são zeradas (`!reset []`) para não
+abrirem regras no `iptables` do servidor nem conflitarem com serviços locais da máquina.
 
-**Proxy na frente do gateway:** o gateway usa o IP da conexão para o limite de requisições em
-`/public/**` e o identity para o limite de tentativas de login. Atrás de um proxy, todos os
-visitantes teriam o IP dele. Antes de pôr um proxy, configurar `server.forward-headers-strategy` e
-os proxies confiáveis do gateway (ver o README do plataforma).
+**IP do visitante atrás do Caddy:** o `Caddyfile` sobrescreve `X-Forwarded-For` com `{remote_host}`
+(o IP da conexão TCP externa) e o `docker-compose.staging.yml` ativa `CONFIAR_PROXY=true` no
+gateway, para que o limite de `/public/**` e o limite de tentativas de login no identity contem por
+visitante real e nunca pelo IP interno do proxy.
 
 ## 5. Logs e métricas
 
