@@ -1,0 +1,21 @@
+# Proxy reverso do ambiente de staging (Requisito RNF01 e RNF09).
+# Emite e renova o certificado TLS (Let's Encrypt / ZeroSSL) automaticamente para PLATAFORMA_DOMINIO.
+#
+# Importante: header_up X-Forwarded-For {remote_host} sobrescreve qualquer X-Forwarded-For que o
+# navegador tenha inventado, entregando ao gateway apenas o IP real da conexão TCP externa.
+
+{$PLATAFORMA_DOMINIO:centinela-pi.duckdns.org} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	reverse_proxy gateway:8080 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
+}
