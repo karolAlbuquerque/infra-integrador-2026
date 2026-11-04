@@ -90,28 +90,32 @@ visitante real e nunca pelo IP interno do proxy.
 
 ## 6. Cópia de segurança
 
-Ainda sem rotina automática (RNF10, espera a definição do servidor, P7). Manualmente, com o compose no ar:
+Rotina automatizada em `scripts/backup-banco.sh` (Requisito RNF10), que gera o dump em formato
+customizado (`pg_dump -Fc`), aplica permissão `600` e apaga cópias com mais de sete dias:
 
 ```bash
-docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" -Fc plataforma > plataforma-$(date +%F).dump
+scripts/backup-banco.sh /root/centinela/backups
+```
+
+Agendamento diário no `cron` do servidor de staging (04h00):
+
+```cron
+0 4 * * * /root/centinela/staging/infra-integrador-2026/scripts/backup-banco.sh /root/centinela/backups >> /var/log/centinela-backup.log 2>&1
 ```
 
 Restaurar num banco vazio (apaga o que houver):
 
 ```bash
 docker compose down && docker volume rm plataforma_pgdata && docker compose up -d postgres
-docker compose exec -T postgres pg_restore -U "$POSTGRES_USER" -d plataforma --clean --if-exists < plataforma-AAAA-MM-DD.dump
-docker compose --profile plataforma --profile modulos up -d
+docker compose exec -T postgres pg_restore -U "$POSTGRES_USER" -d plataforma --clean --if-exists < plataforma-AAAA-MM-DD-HHMMSS.dump
+scripts/subir-staging.sh
 ```
 
-O dump leva os dados de todos os módulos e a auditoria. Guarde-o fora do servidor e com o mesmo
-cuidado do `.env`.
+O dump leva os dados de todos os módulos e a auditoria. Guarde-o fora do servidor junto da chave
+`IDENTITY_SEGUNDO_FATOR_CHAVE` e com o mesmo cuidado do `.env`.
 
 ## 7. Em aberto
 
 | Pendência | Com quem |
 |---|---|
-| Onde roda o staging (P7) | Professores e Grupo 2 |
-| Provedor de e-mail do staging e da produção (P6); o compose hoje aponta o identity para o Mailpit | Professores |
-| Proxy com HTTPS na frente do gateway | Grupo 2, quando houver servidor |
-| Rotina de cópia de segurança com retenção de sete dias (RNF10) | Grupo 2, quando a P7 definir o servidor |
+| Provedor de e-mail externo para produção (P6); o staging usa o Mailpit local (`127.0.0.1:18025`) | Professores |
