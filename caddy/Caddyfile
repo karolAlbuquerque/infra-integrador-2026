@@ -19,3 +19,9 @@
 		header_up X-Forwarded-Host {host}
 	}
 }
+
+# Painel do Mailpit em HTTPS na porta 8025 (usa o mesmo certificado TLS do domínio principal).
+{$PLATAFORMA_DOMINIO:centinela-pi.duckdns.org}:8025 {
+	encode zstd gzip
+	reverse_proxy mailpit:8025
+}
