@@ -33,7 +33,7 @@ scripts/subir-staging.sh                      # sobe infra, plataforma + Caddy H
 - O override `docker-compose.staging.yml` remove o mapeamento de portas no host (`!reset []`) de
   banco, broker, identity, casca, gateway e módulos, adiciona o Caddy nas portas `80` e `443` com
   certificado TLS automático para `PLATAFORMA_DOMINIO`, limita a memória de cada contêiner
-  (`mem_limit`) e prende o Mailpit em `127.0.0.1:18025`.
+  (`mem_limit`) e publica apenas o painel web do Mailpit (`8025`), mantendo o SMTP (`1025`) fechado.
 - O `.env` fica só no servidor (`chmod 600`). A chave do JWT (`IDENTITY_JWT_CHAVE_PRIVADA`) assina todos os tokens;
   trocá-la derruba as sessões abertas.
 - `IDENTITY_SEGUNDO_FATOR_CHAVE` cifra os segredos do aplicativo autenticador de cada usuário. Sem
@@ -44,8 +44,7 @@ scripts/subir-staging.sh                      # sobe infra, plataforma + Caddy H
 - A verificação em duas etapas é obrigatória para todos (RF10). O primeiro administrador, depois de
   definir a senha pelo convite, cadastra o aplicativo autenticador no primeiro acesso.
 - O convite do primeiro administrador sai na primeira subida com o tenant de produção vazio.
-  Sem provedor de e-mail, o link aparece no Mailpit (`http://127.0.0.1:18025`, acessível por túnel
-  SSH e não exposto à internet).
+  Sem provedor de e-mail, o link aparece no Mailpit (`http://servidor:8025`).
 
 ## 3. Atualizar
 
@@ -118,4 +117,4 @@ O dump leva os dados de todos os módulos e a auditoria. Guarde-o fora do servid
 
 | Pendência | Com quem |
 |---|---|
-| Provedor de e-mail externo para produção (P6); o staging usa o Mailpit local (`127.0.0.1:18025`) | Professores |
+| Provedor de e-mail externo para produção (P6); o staging usa o Mailpit (`:8025`) | Professores |
